@@ -1,0 +1,3 @@
+168-138-141-214.sslip.io {
+	reverse_proxy backend:3001
+}

@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolution-postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=evolution
+      - POSTGRES_DB=evolution_db
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+
+  evolution-api:
+    build:
+      context: .
+      dockerfile: evolution.Dockerfile
+    container_name: evolution-api
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - QRCODE_LIMIT=5
+      - LOG_LEVEL=ERROR
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution@postgres:5432/evolution_db?schema=evolution_api
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - CACHE_REDIS_ENABLED=false
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  backend:
+    build: ../backend
+    container_name: controle-financeiro-backend
+    restart: always
+    depends_on:
+      - evolution-api
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+      - PORT=3001
+      - EVOLUTION_API_URL=http://evolution-api:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+    container_name: guara-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: guara-caddy
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  evolution_instances:
+  evolution_postgres_data:
+  caddy_data:
+  caddy_config:
