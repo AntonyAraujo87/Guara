@@ -856,7 +856,9 @@ export default function Home() {
           /* Mês futuro: ainda não há lançamentos, só o que já está comprometido. */
           <section className="bloco px-6 py-7 sm:px-9 sm:py-9 mb-4" style={{ backgroundColor: 'var(--ferrugem)' }}>
             <CalendarDays size={175} strokeWidth={1} aria-hidden="true" className="absolute -right-8 -bottom-10 opacity-[0.13] pointer-events-none" />
-            <p className="rotulo text-sm sm:text-base opacity-90">Já comprometido em {MESES[mesAtivo.mes]}</p>
+            <p className="rotulo text-sm sm:text-base opacity-90">
+                {monthOffset === 0 ? 'Já comprometido' : `Já comprometido em ${MESES[mesAtivo.mes]}`}
+              </p>
             <p className="bloco-cifra text-5xl sm:text-7xl mt-3">{currency.format(totalParcelasDoMes)}</p>
             <p className="text-base sm:text-lg mt-4 opacity-90">
               {parcelasDoMes.length === 0
@@ -877,7 +879,12 @@ export default function Home() {
                 aria-hidden="true"
                 className="absolute -right-8 -bottom-12 opacity-[0.13] pointer-events-none"
               />
-              <p className="rotulo text-sm sm:text-base opacity-90">Saldo de {MESES[mesAtivo.mes]}</p>
+              {/* No mês corrente o nome do mês é ruído: o seletor logo acima já
+                  diz qual é. Navegando para outro mês ele volta, senão "atual"
+                  mentiria — o número seria de setembro com cara de hoje. */}
+              <p className="rotulo text-sm sm:text-base opacity-90">
+                {monthOffset === 0 ? 'Saldo atual' : `Saldo de ${MESES[mesAtivo.mes]}`}
+              </p>
               <p className="bloco-cifra text-5xl sm:text-7xl mt-3">{currency.format(saldo)}</p>
               <p className="text-base sm:text-lg mt-4 opacity-90">
                 {filtered.length === 0
