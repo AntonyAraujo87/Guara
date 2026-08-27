@@ -952,7 +952,12 @@ app.post('/api/phone/verify-code', authLimiter, async (req, res) => {
     if (!user) return res.sendStatus(401);
     const phone = String(req.body?.phone || '').replace(/\D/g, '');
     const code = String(req.body?.code || '').trim();
-    if (!phone || !code) return res.status(400).json({ error: 'Dados incompletos.' });
+    // O código é sempre 6 dígitos. Validar o formato antes de ir ao banco
+    // descarta lixo sem gastar consulta, e fecha a porta pra alguém mandar
+    // um texto enorme só pra ver o que acontece.
+    if (!/^55\d{10}$/.test(phone) || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: 'Dados incompletos.' });
+    }
 
     const { data: verification, error: fetchError } = await supabaseAdmin
       .from('phone_verifications')
@@ -976,8 +981,17 @@ app.post('/api/phone/verify-code', authLimiter, async (req, res) => {
 
     const { error: upsertError } = await supabaseAdmin.from('profiles').upsert({ id: user.id, phone });
     if (upsertError) {
-      const msg = upsertError.message.includes('duplicate') ? 'Esse número já está vinculado a outra conta.' : upsertError.message;
-      return res.status(400).json({ error: msg });
+      // A mensagem crua do banco carrega nome de coluna, de constraint e outros
+      // detalhes de schema. Isso serve pra depurar, não pra entregar a quem está
+      // tentando entrar: vai pro log, e a pessoa recebe algo sobre o que possa
+      // de fato agir.
+      console.error('Falha ao vincular telefone:', upsertError.message);
+      const duplicado = upsertError.message.includes('duplicate');
+      return res.status(400).json({
+        error: duplicado
+          ? 'Esse número já está vinculado a outra conta.'
+          : 'Não consegui vincular esse número. Tente de novo em instantes.',
+      });
     }
     await supabaseAdmin.from('phone_verifications').delete().eq('user_id', user.id);
     res.json({ success: true });
