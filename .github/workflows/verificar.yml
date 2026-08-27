@@ -1,0 +1,46 @@
+name: Verificar
+
+# Roda em Pull Request, ANTES de mesclar.
+#
+# O workflow de publicação só roda em push na main — ou seja, o lint só entraria
+# em ação depois que o código já estivesse na branch principal. Com o Dependabot
+# ligado, chegam PRs de atualização toda semana; sem esta verificação, aceitar um
+# deles é apostar que não quebrou nada.
+#
+# Aqui não se publica imagem nem se toca no servidor: só se lê o código. É de
+# propósito — Pull Request de fora não pode ganhar acesso ao registro.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Conferir o código do frontend
+        working-directory: frontend
+        run: |
+          npm ci --prefer-offline --no-audit --fund=false
+          npx eslint .
+
+      - name: Conferir a sintaxe do backend
+        working-directory: backend
+        run: |
+          # Sem instalar dependências: só checa se os arquivos são JavaScript
+          # válido. Barato, e pega erro de digitação antes de virar container.
+          for arquivo in *.js; do
+            node --check "$arquivo"
+          done
+          echo "sintaxe ok em $(ls *.js | wc -l) arquivos"
