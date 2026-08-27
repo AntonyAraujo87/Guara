@@ -80,7 +80,13 @@ Gatilhos: "paguei a parcela da TV", "quitei a parcela do celular", "paguei a par
 {"kind": "instalar"}
 Gatilhos: "tem app?", "como instalo", "quero o app no celular", "tem pra baixar", "onde baixo", "tem aplicativo", "quero na tela inicial", "manda o link do app", "da pra instalar".
 
-12. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+12. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
+{"kind": "apagar_dados", "confirmado": boolean}
+Gatilhos: "quero apagar meus dados", "apaga tudo", "quero excluir minha conta", "quero sair e apagar tudo", "me tira do sistema", "deleta tudo que voce tem de mim".
+- confirmado = true APENAS se a mensagem for exatamente a palavra de confirmação "APAGAR TUDO" (em maiúsculas ou não). Em qualquer outro caso, false.
+- CUIDADO com a diferença: "apaga o último" é kind "desfazer" (um lançamento só). "apaga tudo" é kind "apagar_dados" (a conta inteira). Se a frase citar UM item ou "o último", é sempre desfazer.
+
+13. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -101,7 +107,7 @@ Regras:
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
-- Quando a mensagem for "ajuda", "meta", "instalar" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- Quando a mensagem for "ajuda", "meta", "instalar", "apagar_dados" ou "desfazer", retorne SÓ esse item, sozinho na lista.
 - "recorrente", "parcela_paga", "consulta" e "editar_recorrente" PODEM vir em lote — uma pessoa junta coisas numa mensagem só. Retorne UM ITEM PARA CADA, nunca só o primeiro:
   - "59,90 na Netflix / 29,90 no Prime / 30 na Vivo" = 3 itens "recorrente".
   - "paguei a parcela da TV e a do celular" = 2 itens "parcela_paga".
@@ -174,6 +180,11 @@ async function extractItems(rawText, categoriasExtras = []) {
       return parsed.map((item) => {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
+        }
+        if (item.kind === 'apagar_dados') {
+          // A confirmação nunca vem da IA: ela é conferida no texto cru, mais
+          // abaixo. Aqui o campo só existe para não quebrar o formato.
+          return { kind: 'apagar_dados', confirmado: false };
         }
         if (item.kind === 'parcela_paga') {
           return { kind: 'parcela_paga', description: item.description || '' };

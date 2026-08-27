@@ -1285,11 +1285,11 @@ export default function Home() {
         />
       )}
 
-      <footer className="max-w-6xl mx-auto mt-10 pt-6 border-t-2 border-[var(--borda)] text-center">
-        <Link
-          href="/privacidade"
-          className="text-base text-[var(--tinta-media)] underline underline-offset-4"
-        >
+      <footer className="max-w-6xl mx-auto mt-10 pt-6 border-t-2 border-[var(--borda)] flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+        <Link href="/termos" className="text-base text-[var(--tinta-media)] underline underline-offset-4">
+          Termos de Uso
+        </Link>
+        <Link href="/privacidade" className="text-base text-[var(--tinta-media)] underline underline-offset-4">
           Privacidade
         </Link>
       </footer>
@@ -1921,10 +1921,14 @@ function AuthCard() {
 
           {/* Aparece antes de criar a conta, não depois: é quando a informação
               ainda pode mudar a decisão de alguém. */}
-          <p className="text-sm text-[var(--tinta-fraca)] mt-6 text-center">
-            Ao criar conta você aceita nossa{' '}
+          <p className="text-sm text-[var(--tinta-fraca)] mt-6 text-center leading-relaxed">
+            Ao criar conta você aceita os{' '}
+            <Link href="/termos" className="underline underline-offset-2 text-[var(--tinta-media)]">
+              Termos de Uso
+            </Link>{' '}
+            e a{' '}
             <Link href="/privacidade" className="underline underline-offset-2 text-[var(--tinta-media)]">
-              política de privacidade
+              Política de Privacidade
             </Link>
             .
           </p>

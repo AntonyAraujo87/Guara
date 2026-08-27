@@ -27,6 +27,7 @@ const {
   savingsByJar,
   getGoal,
   saveGoal,
+  apagarTudoDoTelefone,
   supabaseAdmin,
 } = require('./db-service');
 
@@ -99,6 +100,21 @@ O Guará já funciona pelo navegador — é só abrir o link e usar:
 
 Funciona igual dos dois jeitos. 😉`;
 
+const MSG_APAGAR_CONFIRMA = `⚠️ *Isso apaga tudo, e não tem volta.*
+
+Vou remover todos os seus lançamentos, dívidas, parcelas, cofrinhos, metas e categorias. O vínculo com o painel também sai.
+
+Se tiver certeza, responda exatamente:
+*APAGAR TUDO*
+
+Qualquer outra coisa cancela.
+
+_Quer levar seus dados antes? Baixe a planilha no painel:_ ${PAINEL_URL}`;
+
+const MSG_APAGAR_CANCELADO = `Tudo certo, não apaguei nada. 😌
+
+Seus dados continuam onde estavam.`;
+
 const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 
 *💸 Anotar seus gastos*
@@ -149,6 +165,9 @@ const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 *📱 Ter o app no celular*
 "tem app?"
 "quero instalar no celular"
+
+*🗑️ Apagar tudo que tenho de você*
+"quero apagar meus dados"
 
 Pode falar do seu jeito, sem acento e com abreviação — eu entendo. 😉
 
@@ -252,6 +271,48 @@ async function processIncomingMessage(phone, text) {
 
   if (intencao === 'instalar') {
     await replyWhatsApp(phone, MSG_INSTALAR);
+    return;
+  }
+
+  // Exclusão em duas etapas. A confirmação é conferida no texto CRU, nunca no
+  // que a IA devolveu: interpretar "apaga tudo" errado custa caro demais pra
+  // depender de um modelo. Só a frase exata destrava.
+  if (intencao === 'apagar_dados') {
+    if (text.trim().toUpperCase() === 'APAGAR TUDO') {
+      try {
+        const r = await apagarTudoDoTelefone(phone);
+        const partes = [
+          '🗑️ *Pronto, apaguei tudo.*',
+          '',
+          `${r.total} ${r.total === 1 ? 'registro removido' : 'registros removidos'}.`,
+          '',
+          'As cópias de segurança ainda guardam esses dados por até 14 dias, e depois somem de vez — está escrito na nossa política de privacidade.',
+        ];
+        if (r.tinhaConta) {
+          partes.push(
+            '',
+            `Sua conta de login no painel continua existindo. Pra apagá-la também, escreva pra antonycassioba@gmail.com — respondo em até 15 dias.`
+          );
+        }
+        partes.push('', 'Se um dia quiser voltar, é só me mandar uma mensagem. Começamos do zero. 🐺');
+        await replyWhatsApp(phone, partes.join('\n'));
+      } catch (err) {
+        console.error('Falha ao apagar dados de', phone, err.message);
+        await replyWhatsApp(
+          phone,
+          'Não consegui apagar agora. 😕\nTenta de novo em instantes, ou escreve pra antonycassioba@gmail.com que eu faço na mão.'
+        );
+      }
+      return;
+    }
+    await replyWhatsApp(phone, MSG_APAGAR_CONFIRMA);
+    return;
+  }
+
+  // A confirmação chega como mensagem solta, sem a IA reconhecer como intenção.
+  // Sem isto, quem escreve "APAGAR TUDO" receberia "não entendi".
+  if (text.trim().toUpperCase() === 'APAGAR TUDO') {
+    await replyWhatsApp(phone, MSG_APAGAR_CANCELADO);
     return;
   }
 

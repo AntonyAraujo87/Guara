@@ -646,7 +646,44 @@ async function saveGoal(phone, { monthlyTarget, goalName, goalTarget }) {
   return registro;
 }
 
+// Apaga TUDO de um telefone. Usado pelo pedido de exclusão feito no chat,
+// que a Política de Privacidade promete atender — e promessa que o sistema não
+// cumpre é pior do que promessa nenhuma.
+//
+// A conta de login (auth.users) não é tocada aqui: ela pertence ao Supabase e
+// exige ação no painel. Quem pede pelo chat costuma usar só o WhatsApp; para
+// quem tem conta no painel, a resposta orienta a escrever no e-mail.
+async function apagarTudoDoTelefone(phone) {
+  const tabelas = [
+    'transactions', 'debts', 'installments', 'savings',
+    'goals', 'recurring', 'categories',
+  ];
+
+  const apagados = {};
+  for (const t of tabelas) {
+    const { count, error } = await supabaseAdmin
+      .from(t)
+      .delete({ count: 'exact' })
+      .eq('user_phone', phone);
+    if (error) throw new Error(`falha ao apagar ${t}: ${error.message}`);
+    apagados[t] = count || 0;
+  }
+
+  // O vínculo com a conta do painel sai junto: sem ele, o painel não consegue
+  // mais associar aquele login a este número.
+  const { data: perfil } = await supabaseAdmin.from('profiles').select('id').eq('phone', phone).maybeSingle();
+  if (perfil) {
+    await supabaseAdmin.from('phone_verifications').delete().eq('user_id', perfil.id);
+    await supabaseAdmin.from('profiles').delete().eq('phone', phone);
+    apagados.profiles = 1;
+  }
+
+  const total = Object.values(apagados).reduce((a, b) => a + b, 0);
+  return { apagados, total, tinhaConta: Boolean(perfil) };
+}
+
 module.exports = {
+  apagarTudoDoTelefone,
   saveTransaction,
   saveDebt,
   ensureUser,
