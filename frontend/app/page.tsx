@@ -158,6 +158,9 @@ export default function Home() {
   const [editando, setEditando] = useState<Transaction | null>(null);
   const [editandoRec, setEditandoRec] = useState<Recorrente | null>(null);
   const [editandoPote, setEditandoPote] = useState<Saving | null>(null);
+  // Guarda o nome do cofrinho sendo renomeado (não o lançamento: renomear
+  // atinge todos os lançamentos daquele pote de uma vez).
+  const [renomeandoPote, setRenomeandoPote] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -346,6 +349,31 @@ export default function Home() {
       setSavings((prev) => prev.map((x) => (x.id === s.id ? s : x)));
       setEditandoPote(null);
     }
+  }
+
+  // Cofrinho não é uma tabela: o nome vive em cada lançamento. Renomear é
+  // atualizar todos os lançamentos daquele pote de uma vez.
+  async function handleRenomearPote(nomeAntigo: string, nomeNovo: string) {
+    const novo = nomeNovo.trim();
+    if (!novo || novo === nomeAntigo || !phone) return;
+
+    // "Geral" é o rótulo de quem não tem nome — no banco esses lançamentos têm
+    // jar vazio ou nulo, então precisam de um filtro diferente.
+    const alvos = savings.filter((s) =>
+      nomeAntigo === 'Geral' ? !(s.jar || '').trim() : (s.jar || '').trim() === nomeAntigo
+    );
+    if (alvos.length === 0) return;
+
+    const { error } = await supabase
+      .from('savings')
+      .update({ jar: novo })
+      .in('id', alvos.map((s) => s.id));
+
+    if (error) return;
+
+    const ids = new Set(alvos.map((s) => s.id));
+    setSavings((prev) => prev.map((s) => (ids.has(s.id) ? { ...s, jar: novo } : s)));
+    setRenomeandoPote(null);
   }
 
   async function handleAddCategory(name: string, kind: 'despesa' | 'receita') {
@@ -677,6 +705,7 @@ export default function Home() {
             noMes={guardadoNoMes}
             meta={goal}
             potes={potes}
+            onRenomear={(nome) => setRenomeandoPote(nome)}
             lancamentos={savings}
             onApagar={handleDeleteSaving}
             onEditar={setEditandoPote}
@@ -1122,6 +1151,20 @@ export default function Home() {
           onFechar={() => setEditandoPote(null)}
         />
       )}
+
+      {renomeandoPote && (
+        <ModalRenomearPote
+          nomeAtual={renomeandoPote}
+          potesExistentes={potes.map((p) => p.nome)}
+          quantidade={savings.filter((s) =>
+            renomeandoPote === 'Geral'
+              ? !(s.jar || '').trim()
+              : (s.jar || '').trim() === renomeandoPote
+          ).length}
+          onSalvar={handleRenomearPote}
+          onFechar={() => setRenomeandoPote(null)}
+        />
+      )}
     </main>
   );
 }
@@ -1246,6 +1289,59 @@ function ModalCofrinho({
         <input id="cof-desc" type="text" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Opcional" className={`${campoClasse} mb-6`} />
 
         <button type="submit" className={botaoClasse}>Salvar alterações</button>
+      </form>
+    </CaixaModal>
+  );
+}
+
+function ModalRenomearPote({
+  nomeAtual, potesExistentes, quantidade, onSalvar, onFechar,
+}: {
+  nomeAtual: string;
+  potesExistentes: string[];
+  quantidade: number;
+  onSalvar: (nomeAntigo: string, nomeNovo: string) => void;
+  onFechar: () => void;
+}) {
+  const [nome, setNome] = useState(nomeAtual);
+  const limpo = nome.trim();
+
+  // Renomear para um pote que já existe junta os dois. Não é erro — pode ser
+  // exatamente o que a pessoa quer —, mas ela precisa saber antes de salvar.
+  const vaiJuntar = limpo !== nomeAtual && potesExistentes.includes(limpo);
+
+  function submeter(e: React.FormEvent) {
+    e.preventDefault();
+    if (!limpo) return;
+    onSalvar(nomeAtual, limpo);
+  }
+
+  return (
+    <CaixaModal titulo="Renomear cofrinho" onFechar={onFechar}>
+      <form onSubmit={submeter}>
+        <label htmlFor="pote-nome" className={rotuloClasse}>Nome do cofrinho</label>
+        <input
+          id="pote-nome"
+          type="text"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          maxLength={40}
+          autoFocus
+          className={`${campoClasse} mb-1`}
+        />
+        <p className="text-sm text-[var(--tinta-media)] mb-4">
+          Vale para {quantidade === 1 ? 'o lançamento' : `os ${quantidade} lançamentos`} deste cofrinho.
+        </p>
+
+        {vaiJuntar && (
+          <p className="text-base text-[var(--tinta)] bg-[var(--areia)] border-2 border-[var(--borda-forte)] rounded-xl px-4 py-3 mb-4">
+            ⚠️ Já existe um cofrinho <strong>{limpo}</strong>. Os dois vão virar um só.
+          </p>
+        )}
+
+        <button type="submit" disabled={!limpo} className={`${botaoClasse} disabled:opacity-50`}>
+          Salvar nome
+        </button>
       </form>
     </CaixaModal>
   );
@@ -1891,7 +1987,7 @@ function BotaoAba({ ativo, onClick, icone, children }: { ativo: boolean; onClick
 }
 
 function AbaGuardado({
-  total, noMes, meta, potes, lancamentos, onApagar, onEditar,
+  total, noMes, meta, potes, lancamentos, onApagar, onEditar, onRenomear,
 }: {
   total: number;
   noMes: number;
@@ -1900,6 +1996,7 @@ function AbaGuardado({
   lancamentos: Saving[];
   onApagar: (id: string) => void;
   onEditar: (s: Saving) => void;
+  onRenomear: (nome: string) => void;
 }) {
   const metaMensal = Number(meta?.monthly_target) || 0;
   const objetivo = Number(meta?.goal_target) || 0;
@@ -1929,16 +2026,27 @@ function AbaGuardado({
             {potes.map((p) => (
               <div
                 key={p.nome}
-                className="flex items-center justify-between gap-3 py-3.5 px-4 rounded-xl bg-[var(--areia)]"
+                className="flex items-center justify-between gap-2 py-3.5 px-4 rounded-xl bg-[var(--areia)]"
                 style={{ borderLeft: `6px solid ${p.total >= 0 ? 'var(--verde)' : 'var(--carmim)'}` }}
               >
                 <span className="text-lg font-semibold text-[var(--tinta)] truncate">🫙 {p.nome}</span>
-                <span
-                  className="bloco-cifra text-xl shrink-0 whitespace-nowrap"
-                  style={{ color: p.total >= 0 ? 'var(--verde)' : 'var(--carmim)' }}
-                >
-                  {currency.format(p.total)}
-                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span
+                    className="bloco-cifra text-xl whitespace-nowrap"
+                    style={{ color: p.total >= 0 ? 'var(--verde)' : 'var(--carmim)' }}
+                  >
+                    {currency.format(p.total)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRenomear(p.nome)}
+                    aria-label={`Renomear o cofrinho ${p.nome}`}
+                    title="Renomear"
+                    className="p-2 -mr-1 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--ferrugem)] hover:bg-[var(--creme)] transition"
+                  >
+                    <Pencil size={18} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
