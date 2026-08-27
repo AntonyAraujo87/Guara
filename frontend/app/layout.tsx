@@ -15,6 +15,8 @@ const figtree = Figtree({
   subsets: ["latin"],
 });
 
+const PAINEL_URL = "https://168-138-141-214.sslip.io";
+
 export const metadata: Metadata = {
   title: "Guará",
   description: "Seus gastos e recebimentos, organizados pelo WhatsApp",
@@ -29,6 +31,18 @@ export const metadata: Metadata = {
   icons: {
     icon: "/icone-192.png",
     apple: "/icone-192.png",
+  },
+  // Faz o link virar um cartão com ícone quando compartilhado no WhatsApp,
+  // em vez de chegar como texto pelado. URL absoluta porque quem monta a
+  // prévia é o servidor do WhatsApp, não o navegador de quem recebe.
+  metadataBase: new URL(PAINEL_URL),
+  openGraph: {
+    type: "website",
+    siteName: "Guará",
+    title: "Guará",
+    description: "Seus gastos e recebimentos, organizados pelo WhatsApp",
+    url: PAINEL_URL,
+    images: [{ url: "/icone-512.png", width: 512, height: 512, alt: "Guará" }],
   },
 };
 

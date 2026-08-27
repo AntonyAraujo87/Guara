@@ -885,7 +885,15 @@ function formatConfirmation(items) {
 async function replyWhatsApp(to, body) {
   await axios.post(
     `https://graph.facebook.com/${META_API_VERSION || 'v21.0'}/${META_PHONE_NUMBER_ID}/messages`,
-    { messaging_product: 'whatsapp', to, type: 'text', text: { body } },
+    {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'text',
+      // preview_url faz o WhatsApp montar o cartão com ícone e título quando a
+      // mensagem traz um link. Sem isso o endereço do painel chega como texto
+      // pelado, e um link solto não convida ninguém a tocar.
+      text: { body, preview_url: true },
+    },
     {
       headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` },
       // Sem timeout, uma instabilidade da Meta deixa este await pendurado pra
