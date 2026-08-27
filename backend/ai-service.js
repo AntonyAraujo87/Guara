@@ -132,6 +132,14 @@ function sanitizarTexto(texto) {
   return String(texto ?? '').replace(INVISIVEIS, '').slice(0, LIMITE_TEXTO).trim();
 }
 
+// Três tentativas com pausa crescente. A Gemini gratuita devolve 503 com alguma
+// frequência, e esperar (no pior caso ~2,7s a mais) custa menos do que a pessoa
+// receber "não consegui entender" por um soluço de meio segundo.
+const TENTATIVAS = 3;
+const ESPERAS_MS = [700, 2000];
+
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function extractItems(rawText, categoriasExtras = []) {
   const texto = sanitizarTexto(rawText);
   if (!texto) return [];
@@ -140,7 +148,7 @@ async function extractItems(rawText, categoriasExtras = []) {
   const prompt = SYSTEM_PROMPT + blocoCategorias(categoriasExtras);
 
   let lastError;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= TENTATIVAS; attempt++) {
     try {
       const result = await model.generateContent(
         [
@@ -249,9 +257,13 @@ async function extractItems(rawText, categoriasExtras = []) {
       });
     } catch (err) {
       lastError = err;
-      console.error(`Tentativa ${attempt}/2 falhou ao chamar Gemini:`, err.message);
+      console.error(`Tentativa ${attempt}/${TENTATIVAS} falhou ao chamar Gemini:`, err.message);
       // Cota estourada é por minuto — repetir na hora só queima outra requisição.
       if (/429|quota/i.test(err.message)) break;
+      // Espera antes de repetir. O 503 do plano gratuito é sobrecarga passageira,
+      // e repetir no mesmo instante bate no mesmo servidor cheio — sem essa pausa,
+      // as duas tentativas falhavam juntas.
+      if (attempt < TENTATIVAS) await esperar(ESPERAS_MS[attempt - 1]);
     }
   }
   throw lastError;
