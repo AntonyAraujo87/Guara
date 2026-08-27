@@ -54,6 +54,6 @@ docker compose -f deploy/docker-compose.local.yml up -d --build
 
 ## Sobre as chaves no código
 
-As chaves que aparecem aqui são públicas por natureza: a *anon key* do Supabase
-e a *site key* do Turnstile já ficam visíveis no HTML para qualquer visitante do
-site. O acesso aos dados é controlado por RLS no banco, não por elas.
+A *anon key* do Supabase e a *site key* do Turnstile são públicas por natureza —
+já ficam visíveis no HTML para qualquer visitante do site. Não são segredo e não
+devem ser tratadas como tal.
