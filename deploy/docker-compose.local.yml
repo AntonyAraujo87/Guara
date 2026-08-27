@@ -1,17 +1,11 @@
-# As imagens são compiladas no GitHub Actions e baixadas prontas.
-# Compilar aqui derrubava o site: a VM tem 952 MB e o build do Next tomava a
-# máquina inteira, fazendo as respostas irem de 0,2s para 19s durante 10 minutos.
-#
-# Para publicar uma versão nova:  bash deploy/publicar.sh
-# Para compilar localmente (emergência):  docker compose -f docker-compose.local.yml up -d --build
-
+# Saída de emergência: compila na própria VM, sem depender do GitHub.
+# Só use se o registro estiver fora do ar — o build derruba a performance do
+# site por ~10 minutos. Uso: docker compose -f docker-compose.local.yml up -d --build
 services:
   backend:
-    image: ghcr.io/antonyaraujo87/guara-backend:latest
+    build: ../backend
     container_name: controle-financeiro-backend
     restart: always
-    # Sem porta publicada: o Caddy alcança o backend pela rede interna do Docker
-    # (backend:3001). Publicar no host deixava o app inteiro acessível em HTTP puro.
     expose:
       - "3001"
     environment:
@@ -26,7 +20,12 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
 
   frontend:
-    image: ghcr.io/antonyaraujo87/guara-frontend:latest
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
     container_name: guara-frontend
     restart: always
     expose:
