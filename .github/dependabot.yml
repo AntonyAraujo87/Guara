@@ -1,0 +1,66 @@
+# Mantém as dependências atualizadas sem virar enxurrada.
+#
+# São 711 pacotes ao todo (129 no backend, 582 no frontend). Você escolheu 16;
+# o resto veio junto. Ninguém acompanha isso na mão — e o repositório é público,
+# então as versões exatas que rodam aqui estão à vista de qualquer um.
+#
+# O ajuste que impede o excesso é o "groups": sem ele, cada pacote vira um Pull
+# Request próprio e chegam dezenas por semana. Em duas semanas você ignora todos,
+# e aí nem os que importam são vistos. Agrupado, é UM PR por semana por pasta.
+#
+# Atualização MAIOR (que pode quebrar a API) fica de fora do grupo de propósito:
+# vem sozinha, pra ser lida com atenção antes de aceitar.
+#
+# Os alertas de segurança são outra coisa e ficam em Settings -> Code security.
+# Aqueles avisam sobre falha conhecida; este arquivo é só higiene periódica.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: deps
+    groups:
+      backend:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: deps
+    groups:
+      frontend:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # As ações do GitHub também envelhecem, e são elas que compilam e publicam.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: ci
+    groups:
+      acoes:
+        patterns:
+          - "*"
