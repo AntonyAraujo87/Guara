@@ -1,26 +1,132 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ─────────────────────────────────────────────────────────────
+   Guará — paleta tirada do lobo-guará e do cerrado.
+   Blocos saturados em vez de texto colorido sobre branco: o campo
+   inteiro carrega o significado, então lê de longe e de relance.
+   ───────────────────────────────────────────────────────────── */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  /* superfícies */
+  --areia: #efe3d2;        /* fundo da página: areia pigmentada, não creme lavado */
+  --creme: #fffbf4;        /* superfície de card */
+  --borda: #ddcdb6;
+  --borda-forte: #c9b291;
+
+  /* tinta */
+  --tinta: #191007;        /* quase-preto com viés quente (as patas do guará) */
+  --tinta-media: #5c4a36;
+  --tinta-fraca: #8a7358;
+
+  /* marca e status — cheios, para ocupar campo inteiro */
+  --ferrugem: #c4400d;     /* a pelagem: cor de marca */
+  --ferrugem-escura: #9c3209;
+  --verde: #0b6e3a;        /* entradas */
+  --carmim: #b3122b;       /* saídas */
+
+  /* texto sobre campo saturado */
+  --sobre-cor: #fffbf4;
+
+  /* gráficos */
+  --grade: #d8c6ac;
+  --superficie-grafico: #fffbf4;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --areia: #14100b;
+    --creme: #211a12;
+    --borda: #3a2e21;
+    --borda-forte: #4e3f2d;
+
+    --tinta: #f7efe2;
+    --tinta-media: #c4b39c;
+    --tinta-fraca: #9c8a72;
+
+    --ferrugem: #e85f26;
+    --ferrugem-escura: #c4400d;
+    --verde: #12925a;
+    --carmim: #d92f45;
+
+    --sobre-cor: #fffbf4;
+
+    --grade: #3a2e21;
+    --superficie-grafico: #211a12;
   }
 }
 
+@theme inline {
+  --color-areia: var(--areia);
+  --color-creme: var(--creme);
+  --color-borda: var(--borda);
+  --color-tinta: var(--tinta);
+  --color-ferrugem: var(--ferrugem);
+  --color-verde: var(--verde);
+  --color-carmim: var(--carmim);
+  --font-sans: var(--font-corpo);
+  --font-display: var(--font-display);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--areia);
+  color: var(--tinta);
+  font-family: var(--font-corpo), system-ui, sans-serif;
+}
+
+/* Números em coluna sempre alinhados */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A faixa de saldo e os blocos de entrada/saída */
+.bloco {
+  border-radius: 1.25rem;
+  color: var(--sobre-cor);
+  position: relative;
+  overflow: hidden;
+}
+
+.bloco-cifra {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 118%;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.rotulo {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  font-stretch: 112%;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.titulo {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 115%;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* Foco de teclado sempre visível, em qualquer fundo */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 3px solid var(--ferrugem);
+  outline-offset: 2px;
+}
+
+.bloco :where(a, button):focus-visible {
+  outline-color: var(--sobre-cor);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

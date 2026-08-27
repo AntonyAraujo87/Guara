@@ -15,8 +15,10 @@ sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # Libera as portas no firewall interno do Ubuntu (além das regras da Oracle VCN)
-sudo iptables -I INPUT -p tcp --dport 3001 -j ACCEPT
-sudo iptables -I INPUT -p tcp --dport 8080 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+# 3001 NÃO é liberada de propósito: o backend só é alcançado pelo Caddy, pela rede
+# interna do Docker. Abrir a porta expunha o app inteiro em HTTP sem criptografia.
 sudo netfilter-persistent save 2>/dev/null || true
 
 echo "Docker instalado. Rode 'sudo docker compose up -d --build' na pasta deploy."

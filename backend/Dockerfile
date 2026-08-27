@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY index.js ai-service.js db-service.js ./
+COPY index.js ai-service.js db-service.js run-recurring.js ./
 
 EXPOSE 3001
 

@@ -19,9 +19,10 @@ const CATEGORICAL_DARK = [
   '#9085e9',
 ];
 
+// Mesmos verde/carmim dos blocos do painel (globals.css), para gráfico e UI falarem a mesma língua
 export const STATUS = {
-  good: '#0ca30c',
-  critical: '#d03b3b',
+  good: '#0b6e3a',
+  critical: '#b3122b',
 };
 
 // Mapeamento fixo categoria -> slot (a mesma categoria sempre a mesma cor)
