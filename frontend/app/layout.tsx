@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Archivo, Figtree } from "next/font/google";
 import "./globals.css";
 
@@ -18,6 +18,29 @@ const figtree = Figtree({
 export const metadata: Metadata = {
   title: "Guará",
   description: "Seus gastos e recebimentos, organizados pelo WhatsApp",
+  manifest: "/manifest.json",
+  // Sem isso o iOS abre o atalho no Safari com barra de endereço, em vez de
+  // em tela cheia como um app.
+  appleWebApp: {
+    capable: true,
+    title: "Guará",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icone-192.png",
+    apple: "/icone-192.png",
+  },
+};
+
+// A barra do sistema acompanha o tema do aparelho; a cor tem que trocar junto,
+// senão o topo da tela fica claro com o app escuro.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#efe3d2" },
+    { media: "(prefers-color-scheme: dark)", color: "#14100b" },
+  ],
+  // A tela cheia do PWA cobre a área do notch; sem isso sobra faixa branca.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
