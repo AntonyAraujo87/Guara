@@ -96,8 +96,12 @@ Regras:
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
-- Quando a mensagem for "consulta", "ajuda", "meta", "parcela_paga", "editar_recorrente" ou "desfazer", retorne SÓ esse item, sozinho na lista.
-- EXCEÇÃO: "recorrente" pode vir em lote. Se a pessoa listar várias assinaturas ou contas fixas numa mensagem só ("59,90 na Netflix / 29,90 no Prime / 30 na Vivo"), retorne UM ITEM PARA CADA. Nunca devolva só a primeira.`;
+- Quando a mensagem for "ajuda", "meta", "editar_recorrente" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- "recorrente", "parcela_paga" e "consulta" PODEM vir em lote — uma pessoa junta coisas numa mensagem só. Retorne UM ITEM PARA CADA, nunca só o primeiro:
+  - "59,90 na Netflix / 29,90 no Prime / 30 na Vivo" = 3 itens "recorrente".
+  - "paguei a parcela da TV e a do celular" = 2 itens "parcela_paga".
+  - "quanto gastei esse mês e quanto tenho guardado" = 2 itens "consulta".
+- Mas não invente itens: se a pessoa faz UMA pergunta só, devolva UM item de consulta. Não desmembre a mesma pergunta em várias.`;
 
 // Monta o trecho do prompt que ensina as categorias criadas pela própria pessoa.
 function blocoCategorias(categoriasExtras) {

@@ -229,7 +229,23 @@ async function processIncomingMessage(phone, text) {
   }
 
   if (intencao === 'consulta') {
-    await replyWhatsApp(phone, await responderConsulta(phone, items[0]));
+    // "quanto gastei e quanto tenho guardado" são duas perguntas numa mensagem.
+    // Deduplica porque a IA às vezes repete a mesma pergunta em itens separados,
+    // e limita a 3 pra resposta não virar um paredão de texto no WhatsApp.
+    const vistas = new Set();
+    const consultas = items
+      .filter((i) => i.kind === 'consulta')
+      .filter((c) => {
+        const chave = `${c.metric}|${c.period}|${c.category}`;
+        if (vistas.has(chave)) return false;
+        vistas.add(chave);
+        return true;
+      })
+      .slice(0, 3);
+
+    const respostas = [];
+    for (const c of consultas) respostas.push(await responderConsulta(phone, c));
+    await replyWhatsApp(phone, respostas.join('\n\n'));
     return;
   }
 
@@ -239,7 +255,8 @@ async function processIncomingMessage(phone, text) {
   }
 
   if (intencao === 'parcela_paga') {
-    await replyWhatsApp(phone, await responderParcelaPaga(phone, items[0]));
+    const parcelas = items.filter((i) => i.kind === 'parcela_paga');
+    await replyWhatsApp(phone, await responderParcelaPaga(phone, parcelas));
     return;
   }
 
@@ -431,22 +448,49 @@ async function responderEditarRecorrente(phone, item) {
   return partes.join('\n');
 }
 
-async function responderParcelaPaga(phone, item) {
-  const paga = await markInstallmentPaid(phone, item.description);
-  if (!paga) {
-    return item.description
-      ? `Não achei nenhuma parcela em aberto de "${item.description}". 🤔\nManda *"quais minhas parcelas"* que eu te mostro o que tem.`
+async function responderParcelaPaga(phone, itens) {
+  const lista = itens?.length ? itens : [{ description: '' }];
+  const pagas = [];
+  const naoAchadas = [];
+
+  for (const item of lista) {
+    const paga = await markInstallmentPaid(phone, item.description);
+    if (paga) pagas.push(paga);
+    else naoAchadas.push(item.description || '');
+  }
+
+  if (pagas.length === 0) {
+    const nome = naoAchadas.find(Boolean);
+    return nome
+      ? `Não achei nenhuma parcela em aberto de "${nome}". 🤔\nManda *"quais minhas parcelas"* que eu te mostro o que tem.`
       : 'Você não tem nenhuma parcela em aberto. 🎉';
   }
 
   const restantes = await upcomingInstallments(phone, 24);
   const total = restantes.reduce((s, m) => s + m.total, 0);
 
-  const partes = [
-    `✅ *Parcela paga!*`,
-    `${paga.description} — parcela ${paga.installment_number} de ${paga.installments_total}`,
-    `R$ ${currency.format(Number(paga.amount))}`,
-  ];
+  const partes = [];
+  if (pagas.length === 1) {
+    const p = pagas[0];
+    partes.push(
+      '✅ *Parcela paga!*',
+      `${p.description} — parcela ${p.installment_number} de ${p.installments_total}`,
+      `R$ ${currency.format(Number(p.amount))}`
+    );
+  } else {
+    partes.push(`✅ *${pagas.length} parcelas pagas!*`, '');
+    for (const p of pagas) {
+      partes.push(`• ${p.description} — ${p.installment_number}/${p.installments_total} — R$ ${currency.format(Number(p.amount))}`);
+    }
+  }
+
+  // Quitar uma e ignorar a outra em silêncio deixaria a pessoa achando que
+  // estava tudo certo até dar de cara com a parcela em aberto no painel.
+  const perdidas = naoAchadas.filter(Boolean);
+  if (perdidas.length) {
+    partes.push('', `⚠️ Não achei parcela em aberto de: *${perdidas.join('*, *')}*`);
+  }
+
   partes.push('', total > 0
     ? `Ainda faltam R$ ${currency.format(total)} em parcelas.`
     : 'Era a última! Você não tem mais nada parcelado. 🎉');
