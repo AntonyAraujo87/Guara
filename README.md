@@ -53,11 +53,8 @@ Emergência, se o registro estiver fora:
 docker compose -f deploy/docker-compose.local.yml up -d --build
 ```
 
-## Segredos
+## Sobre as chaves no código
 
-Nada de credencial neste repositório. Tudo vive em `deploy/.env` na VM e nas
-configurações do Supabase — e o `.gitignore` cobre `.env`, `*.pem` e `*.key`.
-
-As chaves que aparecem no código são públicas por natureza: a *anon key* do
-Supabase e a *site key* do Turnstile já ficam visíveis no HTML para qualquer
-visitante.
+As chaves que aparecem aqui são públicas por natureza: a *anon key* do Supabase
+e a *site key* do Turnstile já ficam visíveis no HTML para qualquer visitante do
+site. O acesso aos dados é controlado por RLS no banco, não por elas.
