@@ -15,6 +15,10 @@ export default function Confirmado() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
 
+  // O token de confirmação chega no fragmento da URL, que só existe no
+  // navegador — não dá pra ler durante a renderização no servidor. Ler aqui e
+  // guardar em estado é o caminho correto, ainda que a regra sinalize.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const hashError = hash.get('error_description') || hash.get('error');
@@ -34,6 +38,7 @@ export default function Confirmado() {
       if (!data.session) setErrorMsg('Não encontramos uma confirmação válida nesse link.');
     });
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
@@ -78,6 +83,10 @@ export default function Confirmado() {
                 Sua conta está pronta. Falta só vincular seu número pra os gastos começarem a cair no painel.
               </p>
             </div>
+            {/* Navegação dura de propósito: a sessão acabou de ser criada pelo
+                link de confirmação, e um <Link> faria navegação do lado do
+                cliente, que pode carregar com o estado de autenticação antigo. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
               className="rotulo block text-center w-full bg-[var(--ferrugem)] text-[var(--sobre-cor)] text-base py-4 rounded-xl hover:bg-[var(--ferrugem-escura)] transition"
@@ -122,6 +131,7 @@ export default function Confirmado() {
               >
                 Reenviar confirmação
               </button>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- recarga limpa, mesma razão do botão acima */}
               <a href="/" className="block text-center text-base text-[var(--tinta-media)] mt-4 underline underline-offset-2">
                 Voltar para o início
               </a>

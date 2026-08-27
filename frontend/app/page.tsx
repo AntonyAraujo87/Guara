@@ -1265,17 +1265,18 @@ function ModalEditar({
   const [descricao, setDescricao] = useState(transacao.description || '');
 
   // Trocar de tipo pode deixar uma categoria que não existe do outro lado.
+  //
+  // Derivado durante a renderização, e não corrigido num efeito depois: o efeito
+  // pintava uma vez com a categoria inválida e só então consertava, o que dava
+  // um piscar no select e uma renderização extra a cada troca de tipo.
   const lista = categorias(tipo);
-  useEffect(() => {
-    if (!lista.includes(categoria)) setCategoria(lista[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- só corrige quando a lista muda de tipo
-  }, [tipo]);
+  const categoriaValida = lista.includes(categoria) ? categoria : lista[0];
 
   function submeter(e: React.FormEvent) {
     e.preventDefault();
     const numero = Number(valor.replace(',', '.'));
     if (!Number.isFinite(numero) || numero <= 0) return;
-    onSalvar({ ...transacao, amount: numero, type: tipo, category: categoria, description: descricao.trim() || null });
+    onSalvar({ ...transacao, amount: numero, type: tipo, category: categoriaValida, description: descricao.trim() || null });
   }
 
   return (
@@ -1335,7 +1336,7 @@ function ModalEditar({
         <label htmlFor="ed-cat" className="block text-base font-semibold text-[var(--tinta)] mb-2">Categoria</label>
         <select
           id="ed-cat"
-          value={categoria}
+          value={categoriaValida}
           onChange={(e) => setCategoria(e.target.value)}
           className="w-full bg-[var(--areia)] border-2 border-[var(--borda)] text-[var(--tinta)] rounded-xl px-4 py-3.5 mb-4 text-lg focus:outline-none focus:border-[var(--ferrugem)]"
         >

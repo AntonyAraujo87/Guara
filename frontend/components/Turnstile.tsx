@@ -57,10 +57,19 @@ export default function Turnstile({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
+  // As funções de retorno ficam em ref pra que o widget só seja montado uma vez:
+  // se entrassem nas dependências do efeito abaixo, cada renderização do pai
+  // recriaria o CAPTCHA e o usuário perderia o desafio no meio.
   const onTokenRef = useRef(onToken);
   const onFalhaRef = useRef(onFalha);
-  onTokenRef.current = onToken;
-  onFalhaRef.current = onFalha;
+
+  // Atualizar a ref precisa acontecer depois da renderização, não durante:
+  // escrever em .current no corpo do componente quebra o modo concorrente do
+  // React, onde uma renderização pode ser descartada antes de virar tela.
+  useEffect(() => {
+    onTokenRef.current = onToken;
+    onFalhaRef.current = onFalha;
+  });
 
   useEffect(() => {
     let cancelado = false;

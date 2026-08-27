@@ -26,6 +26,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Trava antes de compilar. Um hook chamado depois de um return derruba o
+      # painel inteiro em tempo de execucao e so aparece pra quem esta logado —
+      # o build passa numa boa. A regra react-hooks/rules-of-hooks pega isso em
+      # segundos; sem rodar o lint, ela nunca era acionada.
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Conferir o codigo do frontend
+        working-directory: frontend
+        run: |
+          npm ci --prefer-offline --no-audit --fund=false
+          npx eslint .
+
       - name: Montar o nome da imagem
         # O registro do GitHub só aceita nome em minúsculas, e o usuário tem
         # maiúsculas (AntonyAraujo87). Sem converter, o envio falha com

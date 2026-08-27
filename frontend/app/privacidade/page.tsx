@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export const metadata = {
   title: "Privacidade — Guará",
 };
@@ -59,9 +61,9 @@ export default function Privacidade() {
         </div>
 
         <p className="mt-6 text-center">
-          <a href="/" className="rotulo text-sm text-[var(--tinta-media)] underline underline-offset-4">
+          <Link href="/" className="rotulo text-sm text-[var(--tinta-media)] underline underline-offset-4">
             Voltar para o Guará
-          </a>
+          </Link>
         </p>
       </div>
     </main>
