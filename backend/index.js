@@ -756,6 +756,34 @@ app.post('/api/phone/verify-code', authLimiter, async (req, res) => {
 });
 
 // Qualquer rota que não seja /meta-webhook ou /api cai no dashboard Next.js (mesma porta, sem precisar de firewall novo)
+// Durante uma publicação o painel reinicia por alguns segundos. Sem tratar isso,
+// quem estivesse usando via a tela de erro do navegador e achava que o serviço caiu.
+const PAGINA_ATUALIZANDO = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guará</title>
+<meta http-equiv="refresh" content="3">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center;
+         background:#efe3d2; color:#191007; text-align:center; padding:1.5rem;
+         font-family: system-ui, -apple-system, sans-serif; }
+  @media (prefers-color-scheme: dark) { body { background:#14100b; color:#f7efe2; } }
+  .caixa { max-width: 22rem; }
+  h1 { font-size:1.6rem; margin:0 0 .6rem; letter-spacing:-.01em; }
+  p { margin:0; font-size:1.05rem; opacity:.75; line-height:1.5; }
+  .rodela { width:2.5rem; height:2.5rem; margin:0 auto 1.5rem; border-radius:50%;
+            border:4px solid rgba(196,64,13,.25); border-top-color:#c4400d;
+            animation: girar .9s linear infinite; }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .rodela { animation-duration: 3s; } }
+</style></head>
+<body><div class="caixa">
+  <div class="rodela"></div>
+  <h1>Já volto 🐺</h1>
+  <p>Estou aplicando uma atualização. Esta página se recarrega sozinha em alguns segundos.</p>
+</div></body></html>`;
+
 app.use(
   createProxyMiddleware({
     target: process.env.FRONTEND_URL || 'http://frontend:3000',
@@ -764,6 +792,17 @@ app.use(
       // Não entregar de bandeja qual tecnologia roda por trás.
       proxyRes: (proxyRes) => {
         delete proxyRes.headers['x-powered-by'];
+      },
+      error: (err, req, res) => {
+        console.error('Painel indisponível:', err.message);
+        if (res.headersSent || !res.writeHead) return;
+        // 503 + Retry-After diz a buscadores e navegadores que é temporário.
+        res.writeHead(503, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Retry-After': '5',
+          'Cache-Control': 'no-store',
+        });
+        res.end(PAGINA_ATUALIZANDO);
       },
     },
   })
