@@ -367,9 +367,10 @@ async function responderRecorrente(phone, itens) {
   } else {
     const novos = salvos.filter((s) => !s.atualizado).length;
     const mexidos = salvos.length - novos;
+    const plural = (n, um, muitos) => `${n} ${n === 1 ? um : muitos}`;
     const titulo = mexidos === 0 ? `${salvos.length} lançamentos mensais anotados!`
       : novos === 0 ? `${salvos.length} lançamentos mensais atualizados!`
-      : `${novos} anotados e ${mexidos} atualizados!`;
+      : `${plural(novos, 'anotado', 'anotados')} e ${plural(mexidos, 'atualizado', 'atualizados')}!`;
     partes.push(`🔁 *${titulo}*`, '');
     for (const s of salvos) {
       partes.push(`${s.type === 'receita' ? '💰' : '💸'} ${s.description} — R$ ${currency.format(Number(s.amount))} _(dia ${s.day_of_month})_`);
@@ -409,9 +410,24 @@ async function responderEditarRecorrente(phone, item) {
       : 'Você ainda não tem nenhum lançamento mensal cadastrado.\nPra criar: _"todo mês pago 50 de Netflix"_';
   }
 
-  const { alvo } = r;
-  const partes = ['✏️ *Corrigido!*', '', `${alvo.description} — R$ ${currency.format(Number(alvo.amount))}`];
-  partes.push(`Agora eu lanço todo dia *${alvo.day_of_month}*. 😉`);
+  const { alvos } = r;
+  if (alvos.length === 1) {
+    const a = alvos[0];
+    return [
+      '✏️ *Corrigido!*',
+      '',
+      `${a.description} — R$ ${currency.format(Number(a.amount))}`,
+      `Agora eu lanço todo dia *${a.day_of_month}*. 😉`,
+    ].join('\n');
+  }
+
+  // Em lote a pessoa não vê o que foi tocado — listar tudo é o que deixa ela
+  // perceber na hora se eu peguei um lançamento que não era pra pegar.
+  const partes = [`✏️ *${alvos.length} lançamentos corrigidos!*`, ''];
+  for (const a of alvos) {
+    partes.push(`${a.type === 'receita' ? '💰' : '💸'} ${a.description} — R$ ${currency.format(Number(a.amount))} _(dia ${a.day_of_month})_`);
+  }
+  partes.push('', 'Se peguei algum sem querer, é só me falar qual. 😉');
   return partes.join('\n');
 }
 

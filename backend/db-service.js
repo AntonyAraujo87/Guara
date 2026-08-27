@@ -421,31 +421,47 @@ async function listRecurring(phone) {
 
 // Corrige um recorrente já cadastrado. Sem descrição, mexe no último criado — que é
 // o caso de "na verdade é dia 5" logo depois de cadastrar.
-async function updateRecurring(phone, { description, dayOfMonth, amount }) {
+// Janela que define "o que eu acabei de mandar": lançamentos criados perto uns dos
+// outros vieram da mesma mensagem, então uma correção em lote deve pegar todos eles.
+const JANELA_LOTE_MS = 5 * 60 * 1000;
+
+async function updateRecurring(phone, { description, dayOfMonth, amount, escopo }) {
+  const mudancas = {};
+  if (dayOfMonth > 0) mudancas.day_of_month = Math.min(31, Math.max(1, Math.round(dayOfMonth)));
+  if (amount > 0) mudancas.amount = amount;
+
   let busca = supabaseAdmin
     .from('recurring')
     .select('*')
     .eq('user_phone', phone)
     .eq('active', true)
-    .order('created_at', { ascending: false })
-    .limit(1);
+    .order('created_at', { ascending: false });
 
-  if (description) busca = busca.ilike('description', `%${description}%`);
+  // Nome citado sempre vence o escopo: "muda a Netflix" mexe na Netflix, e só nela.
+  if (description) busca = busca.ilike('description', `%${description}%`).limit(1);
+  else if (escopo === 'todos' || escopo === 'lote') busca = busca.limit(50);
+  else busca = busca.limit(1);
 
   const { data, error } = await busca;
   if (error) throw error;
-  const alvo = data?.[0];
-  if (!alvo) return null;
+  if (!data || data.length === 0) return null;
 
-  const mudancas = {};
-  if (dayOfMonth > 0) mudancas.day_of_month = Math.min(31, Math.max(1, Math.round(dayOfMonth)));
-  if (amount > 0) mudancas.amount = amount;
-  if (Object.keys(mudancas).length === 0) return { alvo, mudancas: null };
+  let alvos = data;
+  if (!description && escopo === 'lote') {
+    // Só o que veio junto do mais recente — não arrasta o que foi cadastrado antes.
+    const corte = new Date(data[0].created_at).getTime() - JANELA_LOTE_MS;
+    alvos = data.filter((r) => new Date(r.created_at).getTime() >= corte);
+  }
 
-  const { error: upError } = await supabaseAdmin.from('recurring').update(mudancas).eq('id', alvo.id);
+  if (Object.keys(mudancas).length === 0) return { alvos, mudancas: null };
+
+  const { error: upError } = await supabaseAdmin
+    .from('recurring')
+    .update(mudancas)
+    .in('id', alvos.map((r) => r.id));
   if (upError) throw upError;
 
-  return { alvo: { ...alvo, ...mudancas }, mudancas };
+  return { alvos: alvos.map((r) => ({ ...r, ...mudancas })), mudancas };
 }
 
 // Roda uma vez por dia. Lança o que vence hoje e ainda não foi lançado neste mês.

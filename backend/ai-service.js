@@ -58,9 +58,14 @@ Gatilhos: "todo mês pago 50 de netflix", "todo dia 10 pago 1200 de aluguel", "m
 - ATENÇÃO: só use "recorrente" se a frase indicar REPETIÇÃO ("todo mês", "todo dia X", "mensalidade", "assinatura", "por mês"). Um gasto que aconteceu uma vez é "transacao", nunca "recorrente".
 
 9. Editar recorrente (a pessoa quer corrigir um gasto/recebimento mensal que já cadastrou):
-{"kind": "editar_recorrente", "description": string, "dayOfMonth": number, "amount": number}
-Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora é 1300", "corrige a Netflix pra 55", "mudou pro dia 20".
-- description = qual recorrente mudar, se a pessoa citar (ex: "salário", "aluguel"). Se ela não disser qual, deixe string vazia — significa "o último que eu cadastrei".
+{"kind": "editar_recorrente", "description": string, "dayOfMonth": number, "amount": number, "escopo": "um" | "lote" | "todos"}
+Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora é 1300", "corrige a Netflix pra 55", "mudou pro dia 20", "esses últimos são todos dia 5".
+- description = qual recorrente mudar, se a pessoa citar (ex: "salário", "aluguel"). Se ela não disser qual, deixe string vazia.
+- escopo = a QUANTOS lançamentos a correção se aplica. Preste muita atenção nisso:
+  - "um" (padrão) = fala de um lançamento só. Citou o nome ("muda o salário pro dia 10") ou corrige o que acabou de cadastrar ("na verdade é dia 5", "era 200").
+  - "lote" = refere-se ao que ela ACABOU DE MANDAR, sem citar nomes. Gatilhos: "esses últimos que mandei", "os que mandei agora", "esses aí são todos", "essas assinaturas são", "os últimos são".
+  - "todos" = refere-se a TUDO que ela tem cadastrado. Gatilhos: "muda todos", "todos os meus gastos fixos", "tudo que eu cadastrei", "todas as minhas contas".
+  - Na dúvida entre "lote" e "todos", escolha "lote": mexer só no que ela acabou de mandar é mais seguro do que mexer no que ela cadastrou semanas atrás.
 - dayOfMonth = novo dia, se ela citar. Use 0 se não mencionar dia.
 - amount = novo valor, se ela citar. Use 0 se não mencionar valor.
 - Frases curtas de correção logo após cadastrar algo ("na verdade é dia 5", "era 200") são SEMPRE editar_recorrente, nunca uma transação nova.
@@ -91,7 +96,8 @@ Regras:
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
-- Quando a mensagem for "consulta", "ajuda", "meta", "parcela_paga", "recorrente", "editar_recorrente" ou "desfazer", retorne SÓ esse item, sozinho na lista.`;
+- Quando a mensagem for "consulta", "ajuda", "meta", "parcela_paga", "editar_recorrente" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- EXCEÇÃO: "recorrente" pode vir em lote. Se a pessoa listar várias assinaturas ou contas fixas numa mensagem só ("59,90 na Netflix / 29,90 no Prime / 30 na Vivo"), retorne UM ITEM PARA CADA. Nunca devolva só a primeira.`;
 
 // Monta o trecho do prompt que ensina as categorias criadas pela própria pessoa.
 function blocoCategorias(categoriasExtras) {
@@ -152,11 +158,14 @@ async function extractItems(rawText, categoriasExtras = []) {
           };
         }
         if (item.kind === 'editar_recorrente') {
+          // Escopo inválido cai em "um": mexer num lançamento só é o erro mais barato.
+          const escopo = ['um', 'lote', 'todos'].includes(item.escopo) ? item.escopo : 'um';
           return {
             kind: 'editar_recorrente',
             description: (item.description || '').trim(),
             dayOfMonth: Number(item.dayOfMonth) || 0,
             amount: Number(item.amount) || 0,
+            escopo,
           };
         }
         if (item.kind === 'meta') {
