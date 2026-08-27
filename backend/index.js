@@ -42,6 +42,11 @@ function nomeDoMes(dueMonth) {
 
 const PAINEL_URL = 'https://guarapp.duckdns.org';
 
+// Canal oficial de contato, o mesmo publicado na política e nos termos.
+// Fica em constante porque estava escrito no meio de duas mensagens: numa
+// troca de endereço, uma delas ficaria pra trás sem ninguém notar.
+const EMAIL_CONTATO = 'guarafinancas@gmail.com';
+
 // Mensagem 1: curta de propósito. O objetivo dela não é ensinar tudo — é fazer a
 // pessoa RESPONDER. Quem responde já entrou; o resto ela descobre usando.
 const MSG_APRESENTACAO = `Oii! 👋 Eu sou o *Guará* 🐺
@@ -291,7 +296,7 @@ async function processIncomingMessage(phone, text) {
         if (r.tinhaConta) {
           partes.push(
             '',
-            `Sua conta de login no painel continua existindo. Pra apagá-la também, escreva pra antonycassioba@gmail.com — respondo em até 15 dias.`
+            `Sua conta de login no painel continua existindo. Pra apagá-la também, escreva pra ${EMAIL_CONTATO} — respondo em até 15 dias.`
           );
         }
         partes.push('', 'Se um dia quiser voltar, é só me mandar uma mensagem. Começamos do zero. 🐺');
@@ -300,7 +305,7 @@ async function processIncomingMessage(phone, text) {
         console.error('Falha ao apagar dados de', phone, err.message);
         await replyWhatsApp(
           phone,
-          'Não consegui apagar agora. 😕\nTenta de novo em instantes, ou escreve pra antonycassioba@gmail.com que eu faço na mão.'
+          `Não consegui apagar agora. 😕\nTenta de novo em instantes, ou escreve pra ${EMAIL_CONTATO} que eu faço na mão.`
         );
       }
       return;

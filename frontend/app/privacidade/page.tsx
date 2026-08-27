@@ -5,9 +5,10 @@ export const metadata = {
   description: 'O que o Guará guarda, por quê, e o que você pode fazer a respeito.',
 };
 
-// [CONTROLADOR] — trocar por nome completo/razão social e CPF/CNPJ quando houver.
-const CONTROLADOR = 'Antony Araujo';
-const EMAIL = 'antonycassioba@gmail.com';
+// Nome civil completo, como pede documento legal. Se um dia houver CNPJ,
+// trocar por razão social e acrescentar o número.
+const CONTROLADOR = 'Antony Cassio Bandeira Araujo';
+const EMAIL = 'guarafinancas@gmail.com';
 
 const SECOES: Secao[] = [
   {

@@ -5,9 +5,10 @@ export const metadata = {
   description: 'As regras do jogo: o que o Guará faz, o que não faz, e o que se espera de cada lado.',
 };
 
-// [RESPONSÁVEL] — trocar por nome completo/razão social e CPF/CNPJ quando houver.
-const RESPONSAVEL = 'Antony Araujo';
-const EMAIL = 'antonycassioba@gmail.com';
+// Nome civil completo, como pede documento legal. Se um dia houver CNPJ,
+// trocar por razão social e acrescentar o número.
+const RESPONSAVEL = 'Antony Cassio Bandeira Araujo';
+const EMAIL = 'guarafinancas@gmail.com';
 
 const SECOES: Secao[] = [
   {
