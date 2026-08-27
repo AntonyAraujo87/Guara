@@ -52,6 +52,7 @@ type Installment = {
   amount: number;
   due_month: string;
   paid: boolean;
+  paid_at: string | null;
 };
 
 type Saving = {
@@ -326,9 +327,17 @@ export default function Home() {
 
   async function handleTogglePaid(p: Installment) {
     const novo = !p.paid;
-    const { error } = await supabase.from('installments').update({ paid: novo }).eq('id', p.id);
+    // Guarda QUANDO foi paga: é a data que decide de qual mês o dinheiro sai.
+    // Desmarcar limpa, senão a parcela continuaria pesando num mês passado.
+    const pagoEm = novo ? new Date().toISOString() : null;
+    const { error } = await supabase
+      .from('installments')
+      .update({ paid: novo, paid_at: pagoEm })
+      .eq('id', p.id);
     if (error) return setAvisoErro('Não consegui marcar essa parcela.');
-    setInstallments((prev) => prev.map((x) => (x.id === p.id ? { ...x, paid: novo } : x)));
+    setInstallments((prev) =>
+      prev.map((x) => (x.id === p.id ? { ...x, paid: novo, paid_at: pagoEm } : x))
+    );
   }
 
   async function handleSaveEdit(t: Transaction) {
@@ -470,19 +479,29 @@ export default function Home() {
     // como o painel já agrupa as parcelas em todo o resto da tela.
     const dasParcelas: Lancamento[] = installments
       .filter((p) => p.paid)
-      .map((p) => ({
-        id: p.id,
-        user_phone: p.user_phone,
-        amount: Number(p.amount),
-        type: 'despesa' as const,
-        category: p.category,
-        description: `${p.description} — parcela ${p.installment_number}/${p.installments_total}`,
-        // due_month vem como "2026-09-01". Sem fixar uma hora, o navegador lê
-        // como meia-noite UTC e no fuso do Brasil isso cai no dia 31 do mês
-        // ANTERIOR — a parcela apareceria no mês errado.
-        created_at: `${p.due_month}T12:00:00`,
-        origem: 'parcela' as const,
-      }));
+      .map((p) => {
+        // O dinheiro sai no dia em que se paga, não no dia em que vence:
+        // adiantar em agosto uma parcela de setembro tira de agosto.
+        const vence = String(p.due_month).slice(0, 7);
+        const pagouEm = String(p.paid_at || '').slice(0, 7);
+        const ritmo =
+          pagouEm && pagouEm < vence ? ' (adiantada)'
+          : pagouEm && pagouEm > vence ? ' (atrasada)'
+          : '';
+
+        return {
+          id: p.id,
+          user_phone: p.user_phone,
+          amount: Number(p.amount),
+          type: 'despesa' as const,
+          category: p.category,
+          description: `${p.description} — parcela ${p.installment_number}/${p.installments_total}${ritmo}`,
+          // Sem paid_at (linha antiga), cai no vencimento ao meio-dia: sem hora
+          // fixa, "2026-09-01" vira 31 de agosto no fuso do Brasil.
+          created_at: p.paid_at || `${p.due_month}T12:00:00`,
+          origem: 'parcela' as const,
+        };
+      });
 
     return [...transactions, ...doCofrinho, ...dasParcelas].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

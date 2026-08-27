@@ -140,31 +140,41 @@ async function buscarGuardadoComoTransacoes(phone, bounds, category) {
   return (data || []).map(guardadoComoTransacao);
 }
 
-// Parcela paga é dinheiro que saiu. Conta no mês do VENCIMENTO, não no dia em
-// que foi marcada — mesma lógica da fatura do cartão, e é assim que o painel
-// já agrupa parcelas em todo o resto.
+// Parcela paga é dinheiro que saiu — e sai no dia em que se paga, não no dia em
+// que vence. Adiantar em agosto uma parcela de setembro tira de agosto.
+//
+// A descrição diz quando o pagamento saiu do ritmo: adiantada se paga antes do
+// mês de vencimento, atrasada se depois. Sem isso, uma parcela de setembro
+// aparecendo em agosto pareceria erro.
 function parcelaComoTransacao(linha) {
+  const vence = String(linha.due_month).slice(0, 7);          // "2026-09"
+  const pagouEm = String(linha.paid_at || '').slice(0, 7);    // "2026-08"
+
+  let ritmo = '';
+  if (pagouEm && pagouEm < vence) ritmo = ' (adiantada)';
+  else if (pagouEm && pagouEm > vence) ritmo = ' (atrasada)';
+
   return {
     amount: Number(linha.amount),
     type: 'despesa',
     category: linha.category,
-    description: `${linha.description} — parcela ${linha.installment_number}/${linha.installments_total}`,
-    // Meio-dia evita que o fuso jogue a parcela pro mês anterior.
-    created_at: `${linha.due_month}T12:00:00.000Z`,
+    description: `${linha.description} — parcela ${linha.installment_number}/${linha.installments_total}${ritmo}`,
+    // Sem paid_at (linha antiga), cai no vencimento ao meio-dia, que ao menos
+    // evita o fuso jogá-la pro mês anterior.
+    created_at: linha.paid_at || `${linha.due_month}T12:00:00.000Z`,
   };
 }
 
 async function buscarParcelasPagasComoTransacoes(phone, bounds, category) {
   let q = supabaseAdmin
     .from('installments')
-    .select('amount, category, description, installment_number, installments_total, due_month')
+    .select('amount, category, description, installment_number, installments_total, due_month, paid_at')
     .eq('user_phone', phone)
     .eq('paid', true);
 
-  // O filtro de período é por due_month, não por created_at: a parcela pertence
-  // ao mês em que vence, não ao dia em que a compra foi cadastrada.
-  if (bounds.start) q = q.gte('due_month', bounds.start.slice(0, 10));
-  if (bounds.end) q = q.lt('due_month', bounds.end.slice(0, 10));
+  // Filtra pela data do PAGAMENTO: é quando o dinheiro saiu da conta.
+  if (bounds.start) q = q.gte('paid_at', bounds.start);
+  if (bounds.end) q = q.lt('paid_at', bounds.end);
   if (category) q = q.eq('category', category);
 
   const { data, error } = await q;
@@ -448,12 +458,13 @@ async function markInstallmentPaid(phone, descricao) {
   const alvo = data?.[0];
   if (!alvo) return null;
 
+  const pagoEm = new Date().toISOString();
   const { error: upError } = await supabaseAdmin
     .from('installments')
-    .update({ paid: true })
+    .update({ paid: true, paid_at: pagoEm })
     .eq('id', alvo.id);
   if (upError) throw upError;
-  return alvo;
+  return { ...alvo, paid_at: pagoEm };
 }
 
 // ── GASTOS RECORRENTES ─────────────────────────────────────────────
