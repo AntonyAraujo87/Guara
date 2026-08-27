@@ -74,7 +74,9 @@ Se um dia quiser, ela destrava no site:
 2️⃣ Confirme o e-mail que eu mando _(olhe o spam 📬)_
 3️⃣ Digite seu número e o código que eu te envio ✅
 
-Sem pressa nenhuma. Pode ir me mandando seus gastos enquanto isso. 🐺`;
+Sem pressa nenhuma. Pode ir me mandando seus gastos enquanto isso. 🐺
+
+_Seus dados são só seus. O que eu guardo e por quê:_ ${PAINEL_URL}/privacidade`;
 
 // Para quem já tem conta ligada e mandou algo que não era financeiro.
 const MSG_NAO_ENTENDI = `Oi! 🐺 Não achei nenhum valor nessa mensagem.
@@ -149,7 +151,9 @@ const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 "quero instalar no celular"
 
 Pode falar do seu jeito, sem acento e com abreviação — eu entendo. 😉
-Seu painel completo: ${PAINEL_URL}`;
+
+Seu painel: ${PAINEL_URL}
+Privacidade: ${PAINEL_URL}/privacidade`;
 
 // A Meta só deixa mandar texto livre (fora de template aprovado) se o número mandou
 // mensagem pro bot nas últimas 24h — senão é "mensagem iniciada pela empresa" e é bloqueado.

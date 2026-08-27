@@ -18,12 +18,16 @@ const SECOES = [
     texto: "Só para operar o app: identificar sua conta, associar suas mensagens do WhatsApp ao seu painel, e exibir seus próprios dados financeiros de volta pra você. As mensagens que você manda são processadas por um modelo de IA (Google Gemini) só pra extrair valor, categoria e descrição — não são usadas para treinar modelos nem compartilhadas com terceiros.",
   },
   {
-    titulo: "Com quem compartilhamos",
-    texto: "Com ninguém. Não vendemos, alugamos ou compartilhamos seus dados com terceiros para fins comerciais. Seus dados ficam em um banco protegido (Supabase, com controle de acesso por conta) e cada pessoa só enxerga os próprios registros.",
+    titulo: "Quem mais tem acesso",
+    texto: "Nunca vendemos, alugamos nem compartilhamos seus dados para fins comerciais. Mas o Guará é feito de serviços de terceiros, e é justo você saber quais tocam nos seus dados: a Meta entrega as mensagens do WhatsApp; o Google (Gemini) lê o texto da mensagem para extrair valor e categoria; o Supabase guarda o banco e cuida do login; a Cloudflare verifica que quem se cadastra é uma pessoa. Cada um vê só o pedaço de que precisa, e nenhum deles usa seus dados para treinar modelo ou montar perfil.",
+  },
+  {
+    titulo: "Por quanto tempo guardamos",
+    texto: "Seus lançamentos ficam enquanto sua conta existir — o histórico é o próprio produto. Fazemos uma cópia de segurança por dia, guardada por 14 dias. Isso significa que, depois de você apagar algo, ele ainda pode existir nessas cópias por até duas semanas antes de sumir de vez.",
   },
   {
     titulo: "Seus direitos",
-    texto: "Você pode apagar qualquer lançamento ou dívida diretamente no painel. Para excluir sua conta e todos os dados associados, entre em contato pelo e-mail abaixo.",
+    texto: "Você pode apagar qualquer lançamento direto no painel, ou pedir ao Guará no WhatsApp. Pode baixar tudo em planilha quando quiser, pelo botão no painel. Para corrigir, exportar ou excluir sua conta inteira, escreva no e-mail abaixo — respondemos em até 15 dias. Você também pode retirar seu consentimento a qualquer momento; nesse caso a conta é encerrada, porque sem os dados não há o que mostrar.",
   },
 ];
 
@@ -33,7 +37,7 @@ export default function Privacidade() {
       <div className="max-w-2xl mx-auto">
         <div className="bloco px-7 py-8 mb-4" style={{ backgroundColor: "var(--ferrugem)" }}>
           <h1 className="titulo text-4xl sm:text-5xl leading-none">Privacidade</h1>
-          <p className="rotulo text-xs mt-4 opacity-90">Atualizado em 26 de agosto de 2026</p>
+          <p className="rotulo text-xs mt-4 opacity-90">Atualizado em 27 de agosto de 2026</p>
         </div>
 
         <div className="bg-[var(--creme)] rounded-2xl border-2 border-[var(--borda)] p-7 sm:p-9">

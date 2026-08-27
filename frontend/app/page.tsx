@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
@@ -1284,6 +1285,15 @@ export default function Home() {
         />
       )}
 
+      <footer className="max-w-6xl mx-auto mt-10 pt-6 border-t-2 border-[var(--borda)] text-center">
+        <Link
+          href="/privacidade"
+          className="text-base text-[var(--tinta-media)] underline underline-offset-4"
+        >
+          Privacidade
+        </Link>
+      </footer>
+
       {editandoPote && (
         <ModalCofrinho
           lancamento={editandoPote}
@@ -1907,6 +1917,16 @@ function AuthCard() {
             >
               {mode === 'signin' ? 'Criar conta' : 'Entrar'}
             </button>
+          </p>
+
+          {/* Aparece antes de criar a conta, não depois: é quando a informação
+              ainda pode mudar a decisão de alguém. */}
+          <p className="text-sm text-[var(--tinta-fraca)] mt-6 text-center">
+            Ao criar conta você aceita nossa{' '}
+            <Link href="/privacidade" className="underline underline-offset-2 text-[var(--tinta-media)]">
+              política de privacidade
+            </Link>
+            .
           </p>
         </div>
       </div>
