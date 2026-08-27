@@ -140,6 +140,38 @@ async function buscarGuardadoComoTransacoes(phone, bounds, category) {
   return (data || []).map(guardadoComoTransacao);
 }
 
+// Parcela paga é dinheiro que saiu. Conta no mês do VENCIMENTO, não no dia em
+// que foi marcada — mesma lógica da fatura do cartão, e é assim que o painel
+// já agrupa parcelas em todo o resto.
+function parcelaComoTransacao(linha) {
+  return {
+    amount: Number(linha.amount),
+    type: 'despesa',
+    category: linha.category,
+    description: `${linha.description} — parcela ${linha.installment_number}/${linha.installments_total}`,
+    // Meio-dia evita que o fuso jogue a parcela pro mês anterior.
+    created_at: `${linha.due_month}T12:00:00.000Z`,
+  };
+}
+
+async function buscarParcelasPagasComoTransacoes(phone, bounds, category) {
+  let q = supabaseAdmin
+    .from('installments')
+    .select('amount, category, description, installment_number, installments_total, due_month')
+    .eq('user_phone', phone)
+    .eq('paid', true);
+
+  // O filtro de período é por due_month, não por created_at: a parcela pertence
+  // ao mês em que vence, não ao dia em que a compra foi cadastrada.
+  if (bounds.start) q = q.gte('due_month', bounds.start.slice(0, 10));
+  if (bounds.end) q = q.lt('due_month', bounds.end.slice(0, 10));
+  if (category) q = q.eq('category', category);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data || []).map(parcelaComoTransacao);
+}
+
 // Soma entradas e saídas do período, opcionalmente filtrando por categoria.
 async function sumTransactions(phone, period, category) {
   const bounds = periodBounds(period);
@@ -150,7 +182,11 @@ async function sumTransactions(phone, period, category) {
   const { data, error } = await query;
   if (error) throw error;
 
-  const linhas = [...(data || []), ...(await buscarGuardadoComoTransacoes(phone, bounds, category))];
+  const linhas = [
+    ...(data || []),
+    ...(await buscarGuardadoComoTransacoes(phone, bounds, category)),
+    ...(await buscarParcelasPagasComoTransacoes(phone, bounds, category)),
+  ];
   const entradas = linhas.filter((t) => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0);
   const saidas = linhas.filter((t) => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0);
 
@@ -188,7 +224,13 @@ async function listRecentTransactions(phone, limit = 5) {
 
   // Busca "limit" de cada tabela e corta depois de juntar: pegar menos de uma
   // delas poderia esconder um lançamento mais recente do que os que sobraram.
-  return [...(transacoes.data || []), ...(guardado.data || []).map(guardadoComoTransacao)]
+  const parcelas = await buscarParcelasPagasComoTransacoes(phone, { start: null, end: null });
+
+  return [
+    ...(transacoes.data || []),
+    ...(guardado.data || []).map(guardadoComoTransacao),
+    ...parcelas,
+  ]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 }

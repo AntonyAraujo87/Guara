@@ -534,6 +534,11 @@ async function responderParcelaPaga(phone, itens) {
   partes.push('', total > 0
     ? `Ainda faltam R$ ${currency.format(total)} em parcelas.`
     : 'Era a última! Você não tem mais nada parcelado. 🎉');
+
+  // Parcela paga sai do saldo do mês em que vence. Dizer aqui evita a pessoa
+  // ver o número mudar depois, no painel, sem entender o motivo.
+  const { saldo } = await sumTransactions(phone, 'mes');
+  partes.push(`*Saldo do mês:* R$ ${currency.format(saldo)}`);
   return partes.join('\n');
 }
 

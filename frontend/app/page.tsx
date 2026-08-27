@@ -28,7 +28,7 @@ type Transaction = {
 
 // Uma transação comum, ou um lançamento do cofrinho apresentado como tal.
 // A origem diz de qual tabela ele veio, pra editar e apagar acertarem o alvo.
-type Lancamento = Transaction & { origem?: 'guardado' };
+type Lancamento = Transaction & { origem?: 'guardado' | 'parcela' };
 
 type Debt = {
   id: string;
@@ -465,10 +465,29 @@ export default function Home() {
         origem: 'guardado',
       };
     });
-    return [...transactions, ...doCofrinho].sort(
+    // Parcela paga é dinheiro que saiu de verdade. Entra no mês do VENCIMENTO,
+    // não no dia em que foi marcada: é a mesma lógica da fatura do cartão, e é
+    // como o painel já agrupa as parcelas em todo o resto da tela.
+    const dasParcelas: Lancamento[] = installments
+      .filter((p) => p.paid)
+      .map((p) => ({
+        id: p.id,
+        user_phone: p.user_phone,
+        amount: Number(p.amount),
+        type: 'despesa' as const,
+        category: p.category,
+        description: `${p.description} — parcela ${p.installment_number}/${p.installments_total}`,
+        // due_month vem como "2026-09-01". Sem fixar uma hora, o navegador lê
+        // como meia-noite UTC e no fuso do Brasil isso cai no dia 31 do mês
+        // ANTERIOR — a parcela apareceria no mês errado.
+        created_at: `${p.due_month}T12:00:00`,
+        origem: 'parcela' as const,
+      }));
+
+    return [...transactions, ...doCofrinho, ...dasParcelas].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [transactions, savings]);
+  }, [transactions, savings, installments]);
 
   const dateFiltered = useMemo(() => {
     return lancamentos.filter((t) => {
@@ -1162,31 +1181,42 @@ export default function Home() {
                       >
                         {entrada ? '+' : '−'}{currency.format(Number(t.amount))}
                       </span>
-                      {/* Lançamento do cofrinho mora noutra tabela: editar e
-                          apagar precisam ir pra lá, senão não achariam a linha. */}
-                      <button
-                        onClick={() => {
-                          if (t.origem === 'guardado') {
-                            const s = savings.find((x) => x.id === t.id);
-                            if (s) setEditandoPote(s);
-                          } else {
-                            setEditando(t);
-                          }
-                        }}
-                        className="p-2 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--sobre-cor)] hover:bg-[var(--ferrugem)] transition"
-                        aria-label={`Editar ${t.description || t.category}`}
-                      >
-                        <Pencil size={18} />
-                      </button>
-                      <button
-                        onClick={() =>
-                          t.origem === 'guardado' ? handleDeleteSaving(t.id) : handleDelete(t.id)
-                        }
-                        className="p-2 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--sobre-cor)] hover:bg-[var(--carmim)] transition"
-                        aria-label={`Apagar ${t.description || t.category}`}
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {/* Parcela aparece aqui só pra compor o saldo — quem manda
+                          nela é a seção de parcelas. Botões aqui dariam a
+                          entender que dá pra editar o valor de uma parcela solta. */}
+                      {t.origem === 'parcela' ? (
+                        <span className="rotulo text-xs text-[var(--tinta-fraca)] px-2 whitespace-nowrap">
+                          em parcelas
+                        </span>
+                      ) : (
+                        <>
+                          {/* Lançamento do cofrinho mora noutra tabela: editar e
+                              apagar precisam ir pra lá, senão não achariam a linha. */}
+                          <button
+                            onClick={() => {
+                              if (t.origem === 'guardado') {
+                                const s = savings.find((x) => x.id === t.id);
+                                if (s) setEditandoPote(s);
+                              } else {
+                                setEditando(t);
+                              }
+                            }}
+                            className="p-2 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--sobre-cor)] hover:bg-[var(--ferrugem)] transition"
+                            aria-label={`Editar ${t.description || t.category}`}
+                          >
+                            <Pencil size={18} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              t.origem === 'guardado' ? handleDeleteSaving(t.id) : handleDelete(t.id)
+                            }
+                            className="p-2 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--sobre-cor)] hover:bg-[var(--carmim)] transition"
+                            aria-label={`Apagar ${t.description || t.category}`}
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
