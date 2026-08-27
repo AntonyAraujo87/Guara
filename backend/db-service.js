@@ -189,14 +189,17 @@ async function sumTransactions(phone, period, category) {
   query = aplicarPeriodo(query, bounds);
   if (category) query = query.eq('category', category);
 
-  const { data, error } = await query;
-  if (error) throw error;
+  // As três em paralelo: nenhuma depende do resultado da outra, e em fila o
+  // tempo da resposta era a soma das três. Medido: ~37ms cada, então a fila
+  // custava uns 75ms a mais em toda pergunta feita no WhatsApp.
+  const [transacoes, guardado, parcelas] = await Promise.all([
+    query,
+    buscarGuardadoComoTransacoes(phone, bounds, category),
+    buscarParcelasPagasComoTransacoes(phone, bounds, category),
+  ]);
+  if (transacoes.error) throw transacoes.error;
 
-  const linhas = [
-    ...(data || []),
-    ...(await buscarGuardadoComoTransacoes(phone, bounds, category)),
-    ...(await buscarParcelasPagasComoTransacoes(phone, bounds, category)),
-  ];
+  const linhas = [...(transacoes.data || []), ...guardado, ...parcelas];
   const entradas = linhas.filter((t) => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0);
   const saidas = linhas.filter((t) => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0);
 
@@ -215,7 +218,8 @@ async function sumTransactions(phone, period, category) {
 }
 
 async function listRecentTransactions(phone, limit = 5) {
-  const [transacoes, guardado] = await Promise.all([
+  // As três em paralelo: nenhuma depende do resultado da outra.
+  const [transacoes, guardado, parcelas] = await Promise.all([
     supabaseAdmin
       .from('transactions')
       .select('amount, type, category, description, created_at')
@@ -228,14 +232,13 @@ async function listRecentTransactions(phone, limit = 5) {
       .eq('user_phone', phone)
       .order('created_at', { ascending: false })
       .limit(limit),
+    buscarParcelasPagasComoTransacoes(phone, { start: null, end: null }),
   ]);
   if (transacoes.error) throw transacoes.error;
   if (guardado.error) throw guardado.error;
 
   // Busca "limit" de cada tabela e corta depois de juntar: pegar menos de uma
   // delas poderia esconder um lançamento mais recente do que os que sobraram.
-  const parcelas = await buscarParcelasPagasComoTransacoes(phone, { start: null, end: null });
-
   return [
     ...(transacoes.data || []),
     ...(guardado.data || []).map(guardadoComoTransacao),
@@ -522,6 +525,10 @@ async function listRecurring(phone) {
 // outros vieram da mesma mensagem, então uma correção em lote deve pegar todos eles.
 const JANELA_LOTE_MS = 5 * 60 * 1000;
 
+// Teto de uma correção em lote. Existe pra uma frase ambígua não reescrever
+// centenas de linhas de uma vez; quando corta, quem chama avisa.
+const TETO_LOTE = 50;
+
 async function updateRecurring(phone, { description, dayOfMonth, amount, escopo }) {
   const mudancas = {};
   if (dayOfMonth > 0) mudancas.day_of_month = Math.min(31, Math.max(1, Math.round(dayOfMonth)));
@@ -536,7 +543,7 @@ async function updateRecurring(phone, { description, dayOfMonth, amount, escopo 
 
   // Nome citado sempre vence o escopo: "muda a Netflix" mexe na Netflix, e só nela.
   if (description) busca = busca.ilike('description', `%${description}%`).limit(1);
-  else if (escopo === 'todos' || escopo === 'lote') busca = busca.limit(50);
+  else if (escopo === 'todos' || escopo === 'lote') busca = busca.limit(TETO_LOTE);
   else busca = busca.limit(1);
 
   const { data, error } = await busca;
@@ -550,7 +557,11 @@ async function updateRecurring(phone, { description, dayOfMonth, amount, escopo 
     alvos = data.filter((r) => new Date(r.created_at).getTime() >= corte);
   }
 
-  if (Object.keys(mudancas).length === 0) return { alvos, mudancas: null };
+  // Passando do teto, os excedentes ficariam de fora sem ninguém saber. Quem
+  // chama decide o que dizer; o importante é não sumir em silêncio.
+  const truncado = !description && alvos.length >= TETO_LOTE;
+
+  if (Object.keys(mudancas).length === 0) return { alvos, mudancas: null, truncado };
 
   const { error: upError } = await supabaseAdmin
     .from('recurring')
@@ -558,7 +569,7 @@ async function updateRecurring(phone, { description, dayOfMonth, amount, escopo 
     .in('id', alvos.map((r) => r.id));
   if (upError) throw upError;
 
-  return { alvos: alvos.map((r) => ({ ...r, ...mudancas })), mudancas };
+  return { alvos: alvos.map((r) => ({ ...r, ...mudancas })), mudancas, truncado };
 }
 
 // Roda uma vez por dia. Lança o que vence hoje e ainda não foi lançado neste mês.
