@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Figtree } from "next/font/google";
 import "./globals.css";
+import SemInsistencia from "@/components/SemInsistencia";
 
 // Archivo (Omnibus-Type) no eixo expandido: cara de placa, lê de longe.
 const archivo = Archivo({
@@ -63,7 +64,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="pt-BR"
       className={`${archivo.variable} ${figtree.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SemInsistencia />
+        {children}
+      </body>
     </html>
   );
 }

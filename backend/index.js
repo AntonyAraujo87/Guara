@@ -87,15 +87,15 @@ Me conta assim que eu anoto na hora:
 Ou me pergunte: _"quanto gastei esse mês?"_
 Digite *ajuda* pra ver tudo que eu faço. 😉`;
 
-const MSG_INSTALAR = `📱 *Tem sim!*
+const MSG_INSTALAR = `📱 *Não precisa baixar nada!*
 
-O Guará vira um app na sua tela inicial — mesmo painel, sem barra de navegador, abre com um toque.
+O Guará já funciona pelo navegador — é só abrir o link e usar:
+👉 ${PAINEL_URL}
 
+*Se você quiser*, dá pra deixar ele na sua tela inicial, junto dos seus apps. Aí abre com um toque, sem digitar endereço:
 👉 ${PAINEL_URL}/instalar
 
-A página reconhece seu aparelho e mostra o caminho certo. Leva uns 20 segundos.
-
-_Não é nada pra baixar de loja: é o próprio painel virando atalho._ 😉`;
+Funciona igual dos dois jeitos. 😉`;
 
 const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 
