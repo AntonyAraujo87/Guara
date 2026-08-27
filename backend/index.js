@@ -776,20 +776,26 @@ app.post('/meta-webhook', webhookLimiter, async (req, res) => {
       const phone = message.from;
       if (!phone) continue;
 
-      if (message.type !== 'text') {
-        if (TIPOS_IGNORADOS.has(message.type)) continue;
-        // Silêncio faz a pessoa achar que o bot morreu. Um aviso por lote:
-        // quem mandou três áudios seguidos não precisa de três respostas iguais.
-        if (jaAvisou) continue;
-        jaAvisou = true;
-        await ensureUser(phone);
-        await replyWhatsApp(phone, msgTipoNaoSuportado(message.type));
-        continue;
-      }
+      // Cada mensagem no seu próprio try: sem isso, uma falha ao responder a
+      // primeira abortaria o laço e as seguintes sumiriam sem deixar rastro.
+      try {
+        if (message.type !== 'text') {
+          if (TIPOS_IGNORADOS.has(message.type)) continue;
+          // Silêncio faz a pessoa achar que o bot morreu. Um aviso por lote:
+          // quem mandou três áudios seguidos não precisa de três respostas iguais.
+          if (jaAvisou) continue;
+          jaAvisou = true;
+          await ensureUser(phone);
+          await replyWhatsApp(phone, msgTipoNaoSuportado(message.type));
+          continue;
+        }
 
-      const text = message.text?.body;
-      if (!text) continue;
-      await processIncomingMessage(phone, text);
+        const text = message.text?.body;
+        if (!text) continue;
+        await processIncomingMessage(phone, text);
+      } catch (err) {
+        console.error(`Falha ao tratar mensagem ${messageId || '(sem id)'}:`, err.message);
+      }
     }
   } catch (err) {
     console.error('Erro ao processar webhook da Meta:', err.message);
@@ -851,7 +857,13 @@ async function replyWhatsApp(to, body) {
   await axios.post(
     `https://graph.facebook.com/${META_API_VERSION || 'v21.0'}/${META_PHONE_NUMBER_ID}/messages`,
     { messaging_product: 'whatsapp', to, type: 'text', text: { body } },
-    { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` } }
+    {
+      headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` },
+      // Sem timeout, uma instabilidade da Meta deixa este await pendurado pra
+      // sempre. O webhook já respondeu 200, então ninguém percebe — só o
+      // processo, que vai segurando requisição morta até faltar memória.
+      timeout: 15_000,
+    }
   );
 }
 
