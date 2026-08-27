@@ -14,7 +14,7 @@ set -e
 cd "$(dirname "$0")"
 source ./.env
 
-URL="https://168-138-141-214.sslip.io/"
+URL="https://guarapp.duckdns.org/"
 STATE_FILE="/tmp/guara-monitor-fails"
 FAILS=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
 

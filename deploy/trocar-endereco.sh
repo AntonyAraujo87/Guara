@@ -15,7 +15,7 @@
 set -e
 
 NOVO="$1"
-ANTIGO="168-138-141-214.sslip.io"
+ANTIGO="guarapp.duckdns.org"
 
 if [ -z "$NOVO" ]; then
   echo "Falta o endereço novo."

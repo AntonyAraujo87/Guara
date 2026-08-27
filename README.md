@@ -3,7 +3,7 @@
 Controle financeiro pessoal por WhatsApp. Você conta seus gastos numa conversa,
 e o Guará organiza tudo num painel web.
 
-**Painel:** https://168-138-141-214.sslip.io
+**Painel:** https://guarapp.duckdns.org
 **WhatsApp:** +55 51 8056-2381
 
 ## Como funciona

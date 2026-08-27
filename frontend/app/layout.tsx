@@ -16,7 +16,7 @@ const figtree = Figtree({
   subsets: ["latin"],
 });
 
-const PAINEL_URL = "https://168-138-141-214.sslip.io";
+const PAINEL_URL = "https://guarapp.duckdns.org";
 
 export const metadata: Metadata = {
   title: "Guará",

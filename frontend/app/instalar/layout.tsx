@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-const PAINEL = "https://168-138-141-214.sslip.io";
+const PAINEL = "https://guarapp.duckdns.org";
 
 // Sem isto o link chega no WhatsApp como texto pelado. Com isto ele vira um
 // cartão com o ícone do Guará — que é o que faz parecer um app, e não um

@@ -39,7 +39,7 @@ function nomeDoMes(dueMonth) {
   return `${MESES[Number(mes) - 1]}/${ano}`;
 }
 
-const PAINEL_URL = 'https://168-138-141-214.sslip.io';
+const PAINEL_URL = 'https://guarapp.duckdns.org';
 
 // Mensagem 1: curta de propósito. O objetivo dela não é ensinar tudo — é fazer a
 // pessoa RESPONDER. Quem responde já entrou; o resto ela descobre usando.
