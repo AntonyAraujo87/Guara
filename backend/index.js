@@ -161,6 +161,15 @@ async function hasOpenWindow(phone) {
 
 const app = express();
 app.disable('x-powered-by');
+
+// O Caddy fica na frente e repassa o IP real em X-Forwarded-For. Sem confiar
+// nele, o limitador de requisições enxerga todo mundo com o mesmo IP — o do
+// proxy — e os 30 por minuto viravam um teto compartilhado entre TODOS os
+// usuários, em vez de 30 para cada um.
+//
+// O número 1 é o de saltos confiáveis: só o Caddy. Confiar em todos deixaria
+// qualquer um forjar o cabeçalho e escapar do limite.
+app.set('trust proxy', 1);
 // CSP fica a cargo do Next (next.config.ts), que conhece as origens que a página usa.
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
