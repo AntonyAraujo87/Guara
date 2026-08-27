@@ -110,6 +110,36 @@ function aplicarPeriodo(query, { start, end }) {
   return query;
 }
 
+const CATEGORIA_GUARDADO = 'Guardado';
+
+// Guardar dinheiro sai do saldo como qualquer outra despesa, então os
+// lançamentos do cofrinho entram nas contas junto com as transações. Continuam
+// na tabela savings; aqui só ganham a forma de transação.
+//
+// Valor positivo é depósito (saída do saldo); negativo é retirada (volta pra ele).
+function guardadoComoTransacao(linha) {
+  const valor = Number(linha.amount);
+  return {
+    amount: Math.abs(valor),
+    type: valor > 0 ? 'despesa' : 'receita',
+    category: CATEGORIA_GUARDADO,
+    description: (linha.jar || '').trim()
+      ? `${valor > 0 ? 'Guardei' : 'Tirei'} — ${(linha.jar || '').trim()}`
+      : valor > 0 ? 'Guardei' : 'Tirei do guardado',
+    created_at: linha.created_at,
+  };
+}
+
+async function buscarGuardadoComoTransacoes(phone, bounds, category) {
+  // Filtrar por outra categoria exclui o cofrinho: ele só aparece em "Guardado".
+  if (category && category !== CATEGORIA_GUARDADO) return [];
+  let q = supabaseAdmin.from('savings').select('amount, jar, description, created_at').eq('user_phone', phone);
+  q = aplicarPeriodo(q, bounds);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data || []).map(guardadoComoTransacao);
+}
+
 // Soma entradas e saídas do período, opcionalmente filtrando por categoria.
 async function sumTransactions(phone, period, category) {
   const bounds = periodBounds(period);
@@ -120,7 +150,7 @@ async function sumTransactions(phone, period, category) {
   const { data, error } = await query;
   if (error) throw error;
 
-  const linhas = data || [];
+  const linhas = [...(data || []), ...(await buscarGuardadoComoTransacoes(phone, bounds, category))];
   const entradas = linhas.filter((t) => t.type === 'receita').reduce((s, t) => s + Number(t.amount), 0);
   const saidas = linhas.filter((t) => t.type === 'despesa').reduce((s, t) => s + Number(t.amount), 0);
 
@@ -139,14 +169,28 @@ async function sumTransactions(phone, period, category) {
 }
 
 async function listRecentTransactions(phone, limit = 5) {
-  const { data, error } = await supabaseAdmin
-    .from('transactions')
-    .select('amount, type, category, description, created_at')
-    .eq('user_phone', phone)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return data || [];
+  const [transacoes, guardado] = await Promise.all([
+    supabaseAdmin
+      .from('transactions')
+      .select('amount, type, category, description, created_at')
+      .eq('user_phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    supabaseAdmin
+      .from('savings')
+      .select('amount, jar, description, created_at')
+      .eq('user_phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+  ]);
+  if (transacoes.error) throw transacoes.error;
+  if (guardado.error) throw guardado.error;
+
+  // Busca "limit" de cada tabela e corta depois de juntar: pegar menos de uma
+  // delas poderia esconder um lançamento mais recente do que os que sobraram.
+  return [...(transacoes.data || []), ...(guardado.data || []).map(guardadoComoTransacao)]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
 }
 
 async function sumOpenDebts(phone) {

@@ -335,6 +335,11 @@ async function confirmarGuardado(phone, item) {
   }
   partes.push('', `*Você tem guardado:* R$ ${currency.format(total)}`);
 
+  // Guardar tira do saldo do mês. Sem dizer aqui, a pessoa só descobriria
+  // olhando o painel, e acharia que sumiu dinheiro.
+  const { saldo } = await sumTransactions(phone, 'mes');
+  partes.push(`*Saldo do mês:* R$ ${currency.format(saldo)}`);
+
   const alvo = Number(meta?.monthly_target) || 0;
   if (alvo > 0) {
     const falta = alvo - noMes;

@@ -26,6 +26,10 @@ type Transaction = {
   created_at: string;
 };
 
+// Uma transação comum, ou um lançamento do cofrinho apresentado como tal.
+// A origem diz de qual tabela ele veio, pra editar e apagar acertarem o alvo.
+type Lancamento = Transaction & { origem?: 'guardado' };
+
 type Debt = {
   id: string;
   user_phone: string;
@@ -420,12 +424,43 @@ export default function Home() {
   const ehFuturo = monthOffset > 0;
 
   // Lançamentos do mês selecionado — a navegação é sempre por mês inteiro.
+  // Guardar dinheiro tira do saldo como qualquer outra saída, então os
+  // lançamentos do cofrinho entram na MESMA lista das transações. Mesclar aqui,
+  // na raiz da cadeia, faz o saldo, os gastos, o gráfico e o extrato herdarem o
+  // comportamento sem precisar mexer em cada cálculo depois.
+  //
+  // Continuam vivendo na tabela savings — o campo origem existe pra editar e
+  // apagar irem parar na tabela certa.
+  const lancamentos = useMemo<Lancamento[]>(() => {
+    const doCofrinho: Lancamento[] = savings.map((s) => {
+      const valor = Number(s.amount);
+      const guardou = valor > 0;
+      const pote = (s.jar || '').trim();
+      return {
+        id: s.id,
+        user_phone: s.user_phone,
+        amount: Math.abs(valor),
+        // Guardar sai do saldo; tirar do cofrinho volta pra ele.
+        type: guardou ? 'despesa' : 'receita',
+        category: 'Guardado',
+        description: pote
+          ? `${guardou ? 'Guardei' : 'Tirei'} — ${pote}`
+          : guardou ? 'Guardei' : 'Tirei do guardado',
+        created_at: s.created_at,
+        origem: 'guardado',
+      };
+    });
+    return [...transactions, ...doCofrinho].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [transactions, savings]);
+
   const dateFiltered = useMemo(() => {
-    return transactions.filter((t) => {
+    return lancamentos.filter((t) => {
       const d = new Date(t.created_at);
       return d.getFullYear() === mesAtivo.ano && d.getMonth() === mesAtivo.mes;
     });
-  }, [transactions, mesAtivo]);
+  }, [lancamentos, mesAtivo]);
 
   // Parcelas que vencem no mês selecionado.
   const parcelasDoMes = useMemo(() => {
@@ -1089,15 +1124,26 @@ export default function Home() {
                       >
                         {entrada ? '+' : '−'}{currency.format(Number(t.amount))}
                       </span>
+                      {/* Lançamento do cofrinho mora noutra tabela: editar e
+                          apagar precisam ir pra lá, senão não achariam a linha. */}
                       <button
-                        onClick={() => setEditando(t)}
+                        onClick={() => {
+                          if (t.origem === 'guardado') {
+                            const s = savings.find((x) => x.id === t.id);
+                            if (s) setEditandoPote(s);
+                          } else {
+                            setEditando(t);
+                          }
+                        }}
                         className="p-2 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--sobre-cor)] hover:bg-[var(--ferrugem)] transition"
                         aria-label={`Editar ${t.description || t.category}`}
                       >
                         <Pencil size={18} />
                       </button>
                       <button
-                        onClick={() => handleDelete(t.id)}
+                        onClick={() =>
+                          t.origem === 'guardado' ? handleDeleteSaving(t.id) : handleDelete(t.id)
+                        }
                         className="p-2 rounded-lg text-[var(--tinta-fraca)] hover:text-[var(--sobre-cor)] hover:bg-[var(--carmim)] transition"
                         aria-label={`Apagar ${t.description || t.category}`}
                       >
