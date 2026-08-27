@@ -1,4 +1,8 @@
 node_modules
 .next
 .git
-.env.local
+# Cobre .env, .env.local, .env.production — nenhum segredo entra na imagem,
+# nem em build feito na maquina local.
+.env*
+*.pem
+*.key

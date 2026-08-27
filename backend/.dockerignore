@@ -1,2 +1,6 @@
 node_modules
-.env
+# Cobre .env, .env.local, .env.production — nenhum segredo entra na imagem,
+# nem em build feito na maquina local.
+.env*
+*.pem
+*.key
