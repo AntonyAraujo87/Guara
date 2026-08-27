@@ -76,7 +76,11 @@ Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora 
 Gatilhos: "paguei a parcela da TV", "quitei a parcela do celular", "paguei a parcela desse mês", "parcela paga".
 - description é o nome da compra, se a pessoa citar (ex: "TV"). Deixe string vazia se ela não disser qual.
 
-11. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+11. Instalar (a pessoa quer o app no celular, ou pergunta se existe app):
+{"kind": "instalar"}
+Gatilhos: "tem app?", "como instalo", "quero o app no celular", "tem pra baixar", "onde baixo", "tem aplicativo", "quero na tela inicial", "manda o link do app", "da pra instalar".
+
+12. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -97,7 +101,7 @@ Regras:
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
-- Quando a mensagem for "ajuda", "meta" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- Quando a mensagem for "ajuda", "meta", "instalar" ou "desfazer", retorne SÓ esse item, sozinho na lista.
 - "recorrente", "parcela_paga", "consulta" e "editar_recorrente" PODEM vir em lote — uma pessoa junta coisas numa mensagem só. Retorne UM ITEM PARA CADA, nunca só o primeiro:
   - "59,90 na Netflix / 29,90 no Prime / 30 na Vivo" = 3 itens "recorrente".
   - "paguei a parcela da TV e a do celular" = 2 itens "parcela_paga".
@@ -160,7 +164,7 @@ async function extractItems(rawText, categoriasExtras = []) {
       if (parsed.length === 0) return [];
 
       return parsed.map((item) => {
-        if (item.kind === 'ajuda' || item.kind === 'desfazer') {
+        if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
         }
         if (item.kind === 'parcela_paga') {

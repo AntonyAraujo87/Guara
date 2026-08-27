@@ -87,6 +87,16 @@ Me conta assim que eu anoto na hora:
 Ou me pergunte: _"quanto gastei esse mês?"_
 Digite *ajuda* pra ver tudo que eu faço. 😉`;
 
+const MSG_INSTALAR = `📱 *Tem sim!*
+
+O Guará vira um app na sua tela inicial — mesmo painel, sem barra de navegador, abre com um toque.
+
+👉 ${PAINEL_URL}/instalar
+
+A página reconhece seu aparelho e mostra o caminho certo. Leva uns 20 segundos.
+
+_Não é nada pra baixar de loja: é o próprio painel virando atalho._ 😉`;
+
 const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 
 *💸 Anotar seus gastos*
@@ -133,6 +143,10 @@ const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 
 *↩️ Corrigir um erro*
 "apaga o último"
+
+*📱 Ter o app no celular*
+"tem app?"
+"quero instalar no celular"
 
 Pode falar do seu jeito, sem acento e com abreviação — eu entendo. 😉
 Seu painel completo: ${PAINEL_URL}`;
@@ -220,6 +234,11 @@ async function processIncomingMessage(phone, text) {
 
   if (intencao === 'ajuda') {
     await replyWhatsApp(phone, MSG_AJUDA);
+    return;
+  }
+
+  if (intencao === 'instalar') {
+    await replyWhatsApp(phone, MSG_INSTALAR);
     return;
   }
 
