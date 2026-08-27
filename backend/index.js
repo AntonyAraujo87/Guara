@@ -731,25 +731,66 @@ app.get('/meta-webhook', (req, res) => {
   return res.sendStatus(403);
 });
 
+// Reação e evento de sistema não são a pessoa falando comigo — responder a um
+// "joinha" com "não entendi" seria mais irritante do que ficar quieto.
+const TIPOS_IGNORADOS = new Set(['reaction', 'system', 'order']);
+
+function msgTipoNaoSuportado(tipo) {
+  const abertura = {
+    audio: 'Ainda não consigo ouvir áudio. 🙉',
+    image: 'Ainda não consigo ler imagem. 🙈',
+    video: 'Ainda não consigo ver vídeo. 🎬',
+    document: 'Ainda não consigo abrir arquivo. 📄',
+    sticker: 'Figurinha eu até curto, mas não sei anotar. 😄',
+    location: 'Localização eu não sei anotar. 📍',
+    contacts: 'Contato eu não sei anotar. 👤',
+  }[tipo] || 'Só consigo entender mensagem escrita. 📝';
+
+  return `${abertura}
+
+Me manda escrito que eu anoto na hora:
+💸 _"paguei 30 no mercado"_
+💰 _"recebi 500 do freela"_
+
+Digite *ajuda* pra ver tudo que eu faço. 😉`;
+}
+
 app.post('/meta-webhook', webhookLimiter, async (req, res) => {
   if (!verifyMetaSignature(req)) return res.sendStatus(401);
   res.sendStatus(200);
   try {
     const value = req.body?.entry?.[0]?.changes?.[0]?.value;
-    const message = value?.messages?.[0];
-    if (!message || message.type !== 'text') return;
+    // A Meta pode entregar várias mensagens no mesmo webhook. Pegar só a
+    // primeira significava perder as outras sem deixar rastro.
+    const mensagens = value?.messages || [];
 
-    const messageId = message.id;
-    if (messageId) {
-      if (processedMessageIds.has(messageId)) return;
-      processedMessageIds.add(messageId);
-      if (processedMessageIds.size > 2000) processedMessageIds.clear();
+    let jaAvisou = false;
+    for (const message of mensagens) {
+      const messageId = message.id;
+      if (messageId) {
+        if (processedMessageIds.has(messageId)) continue;
+        processedMessageIds.add(messageId);
+        if (processedMessageIds.size > 2000) processedMessageIds.clear();
+      }
+
+      const phone = message.from;
+      if (!phone) continue;
+
+      if (message.type !== 'text') {
+        if (TIPOS_IGNORADOS.has(message.type)) continue;
+        // Silêncio faz a pessoa achar que o bot morreu. Um aviso por lote:
+        // quem mandou três áudios seguidos não precisa de três respostas iguais.
+        if (jaAvisou) continue;
+        jaAvisou = true;
+        await ensureUser(phone);
+        await replyWhatsApp(phone, msgTipoNaoSuportado(message.type));
+        continue;
+      }
+
+      const text = message.text?.body;
+      if (!text) continue;
+      await processIncomingMessage(phone, text);
     }
-
-    const phone = message.from;
-    const text = message.text?.body;
-    if (!text) return;
-    await processIncomingMessage(phone, text);
   } catch (err) {
     console.error('Erro ao processar webhook da Meta:', err.message);
   }
