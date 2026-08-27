@@ -1,9 +1,8 @@
 #!/bin/bash
 # Publica a versão mais recente na VM.
 #
-# As imagens vêm prontas do GitHub Actions — a VM só baixa e troca o container.
-# Leva ~1 minuto e o site continua respondendo, em vez dos ~10 minutos de build
-# local que deixavam o site em 19s de resposta.
+# As imagens vêm prontas do GitHub Actions — o servidor só baixa e troca o
+# container, em cerca de um minuto e sem tirar o site do ar.
 set -e
 cd "$(dirname "$0")"
 

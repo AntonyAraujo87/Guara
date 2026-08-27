@@ -1,9 +1,7 @@
 168-138-141-214.sslip.io {
 	reverse_proxy backend:3001 {
-		# Durante uma publicação o container reinicia por ~15s. Sem isso o Caddy
-		# devolve 502 na hora e quem está usando vê "página não carregou".
-		# Com lb_try_duration ele segura a requisição e tenta de novo até o
-		# backend voltar — a troca fica invisível, só um pouco mais lenta.
+		# Durante uma publicação o container reinicia. Em vez de devolver erro
+		# na hora, o Caddy segura a requisição e tenta de novo até voltar.
 		lb_try_duration 30s
 		lb_try_interval 500ms
 	}

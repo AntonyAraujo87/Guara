@@ -1,8 +1,7 @@
 name: Publicar imagens
 
-# Compila as imagens aqui, em máquina grande, em vez de na VM.
-# A VM tem 952 MB: compilar lá derruba o site para ~20s de resposta durante
-# todo o build, a ponto do navegador desistir. Aqui ela só baixa o resultado.
+# Compila as imagens aqui, em máquina grande, em vez de no servidor de produção,
+# que assim fica livre para atender o site. Ele só baixa o resultado pronto.
 
 on:
   push:

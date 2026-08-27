@@ -33,8 +33,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   // Empacota só o que o servidor precisa em tempo de execução, em vez de arrastar
-  // o node_modules inteiro. Derruba a imagem de ~600 MB para ~200 MB, o que importa
-  // porque a VM tem 952 MB e sofre a cada publicação.
+  // o node_modules inteiro. Reduz muito o tamanho da imagem e o tempo de publicação.
   output: "standalone",
   poweredByHeader: false,
   async headers() {

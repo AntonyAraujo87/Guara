@@ -757,7 +757,7 @@ app.post('/api/phone/verify-code', authLimiter, async (req, res) => {
 
 // Qualquer rota que não seja /meta-webhook ou /api cai no dashboard Next.js (mesma porta, sem precisar de firewall novo)
 // Durante uma publicação o painel reinicia por alguns segundos. Sem tratar isso,
-// quem estivesse usando via a tela de erro do navegador e achava que o serviço caiu.
+// quem estivesse usando veria a tela de erro do navegador.
 const PAGINA_ATUALIZANDO = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

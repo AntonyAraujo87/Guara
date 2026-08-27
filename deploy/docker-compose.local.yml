@@ -1,6 +1,6 @@
-# Saída de emergência: compila na própria VM, sem depender do GitHub.
-# Só use se o registro estiver fora do ar — o build derruba a performance do
-# site por ~10 minutos. Uso: docker compose -f docker-compose.local.yml up -d --build
+# Saída de emergência: compila no próprio servidor, sem depender do GitHub.
+# Só use se o registro estiver indisponível — compilar aqui afeta a performance
+# do site enquanto dura. Uso: docker compose -f docker-compose.local.yml up -d --build
 services:
   backend:
     build: ../backend

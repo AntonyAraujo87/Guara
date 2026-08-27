@@ -1,6 +1,5 @@
 # As imagens são compiladas no GitHub Actions e baixadas prontas.
-# Compilar aqui derrubava o site: a VM tem 952 MB e o build do Next tomava a
-# máquina inteira, fazendo as respostas irem de 0,2s para 19s durante 10 minutos.
+# Compilar no servidor competia por recursos com o site em produção.
 #
 # Para publicar uma versão nova:  bash deploy/publicar.sh
 # Para compilar localmente (emergência):  docker compose -f docker-compose.local.yml up -d --build
@@ -10,8 +9,7 @@ services:
     image: ghcr.io/antonyaraujo87/guara-backend:latest
     container_name: controle-financeiro-backend
     restart: always
-    # Sem porta publicada: o Caddy alcança o backend pela rede interna do Docker
-    # (backend:3001). Publicar no host deixava o app inteiro acessível em HTTP puro.
+    # Sem porta publicada: o acesso é só pela rede interna, através do Caddy.
     expose:
       - "3001"
     environment:

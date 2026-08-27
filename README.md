@@ -39,9 +39,8 @@ deploy/      Compose, Caddy, backup, monitor e migrações
 
 ## Publicar
 
-As imagens são compiladas no GitHub Actions — **não na VM**. Compilar lá derrubava
-o site: a máquina tem 952 MB e o build tomava tudo, fazendo as respostas irem de
-0,2s para 19s durante 10 minutos.
+As imagens são compiladas no GitHub Actions — **não no servidor**, que fica livre
+para atender o site enquanto isso.
 
 ```bash
 git push            # dispara a compilação
