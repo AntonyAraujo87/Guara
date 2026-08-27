@@ -14,7 +14,11 @@ source ./.env
 BACKUP_DIR="/home/ubuntu/guara-backups"
 mkdir -p "$BACKUP_DIR"
 DATE=$(date +%Y-%m-%d)
-TABLES="transactions debts profiles users installments savings goals categories"
+# Toda tabela com dado que a pessoa perderia se o banco sumisse.
+# phone_verifications fica FORA de propósito: são códigos de 6 dígitos que
+# expiram em 10 minutos, então guardá-los não recupera nada e ainda espalha
+# credencial temporária por dois lugares a mais.
+TABLES="transactions debts profiles users installments savings goals categories recurring"
 FALHAS=0
 
 for TABLE in $TABLES; do

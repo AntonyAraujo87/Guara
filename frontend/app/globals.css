@@ -111,14 +111,18 @@ body {
   text-wrap: balance;
 }
 
-/* Foco de teclado sempre visível, em qualquer fundo */
+/* Foco de teclado sempre visível, em qualquer fundo.
+   O !important não é preguiça: vários campos usam a classe focus:outline-none
+   do Tailwind, que tem especificidade maior que :where() (que vale zero) e
+   apagava este anel. Quem navega por teclado ficava sem saber onde está.
+   Só aparece em :focus-visible, então clique de mouse continua sem anel. */
 :where(a, button, input, select, textarea):focus-visible {
-  outline: 3px solid var(--ferrugem);
-  outline-offset: 2px;
+  outline: 3px solid var(--ferrugem) !important;
+  outline-offset: 2px !important;
 }
 
 .bloco :where(a, button):focus-visible {
-  outline-color: var(--sobre-cor);
+  outline-color: var(--sobre-cor) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

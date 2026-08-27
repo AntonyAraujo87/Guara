@@ -892,10 +892,13 @@ export default function Home() {
         {!ehFuturo && (
           <div className="relative mb-8">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--tinta-fraca)]" size={20} />
+            {/* aria-label além do placeholder: o placeholder some ao digitar, então
+                sozinho ele não serve de nome acessível pra quem usa leitor de tela. */}
             <input
-              type="text"
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              aria-label="Buscar por categoria ou descrição"
               placeholder="Buscar por categoria ou descrição"
               className="w-full bg-[var(--creme)] border-2 border-[var(--borda)] text-[var(--tinta)] placeholder:text-[var(--tinta-fraca)] rounded-xl pl-12 pr-4 py-3 text-lg focus:outline-none focus:border-[var(--ferrugem)]"
             />
@@ -1406,6 +1409,7 @@ function AbaAjustes({
             type="text"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
+            aria-label="Nome da nova categoria"
             placeholder="Nome da categoria. Ex.: Pet, Academia"
             maxLength={40}
             className="flex-1 bg-[var(--areia)] border-2 border-[var(--borda)] text-[var(--tinta)] placeholder:text-[var(--tinta-fraca)] rounded-xl px-4 py-3.5 text-lg focus:outline-none focus:border-[var(--ferrugem)]"
