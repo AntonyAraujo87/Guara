@@ -165,6 +165,17 @@ export default function Home() {
   // Guarda o nome do cofrinho sendo renomeado (não o lançamento: renomear
   // atinge todos os lançamentos daquele pote de uma vez).
   const [renomeandoPote, setRenomeandoPote] = useState<string | null>(null);
+  // Sem isso, uma operação que o banco recusa não muda a tela nem diz nada —
+  // a pessoa clica de novo achando que não pegou.
+  const [avisoErro, setAvisoErro] = useState<string | null>(null);
+
+  // Some sozinho depois de um tempo. Oito segundos dá pra ler com calma sem o
+  // aviso virar parte da tela; quem quiser tirar antes tem o botão de fechar.
+  useEffect(() => {
+    if (!avisoErro) return;
+    const t = setTimeout(() => setAvisoErro(null), 8000);
+    return () => clearTimeout(t);
+  }, [avisoErro]);
   const [exportando, setExportando] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -289,32 +300,35 @@ export default function Home() {
   async function handleDelete(id: string) {
     if (!confirm('Apagar essa transação?')) return;
     const { error } = await supabase.from('transactions').delete().eq('id', id);
-    if (!error) setTransactions((prev) => prev.filter((t) => t.id !== id));
+    if (error) return setAvisoErro('Não consegui apagar esse lançamento.');
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
   }
 
   async function handleSettleDebt(id: string) {
     const { error } = await supabase.from('debts').update({ status: 'quitada', settled_at: new Date().toISOString() }).eq('id', id);
-    if (!error) setDebts((prev) => prev.filter((d) => d.id !== id));
+    if (error) return setAvisoErro('Não consegui quitar esse combinado.');
+    setDebts((prev) => prev.filter((d) => d.id !== id));
   }
 
   async function handleDeleteDebt(id: string) {
     if (!confirm('Apagar essa dívida?')) return;
     const { error } = await supabase.from('debts').delete().eq('id', id);
-    if (!error) setDebts((prev) => prev.filter((d) => d.id !== id));
+    if (error) return setAvisoErro('Não consegui apagar esse combinado.');
+    setDebts((prev) => prev.filter((d) => d.id !== id));
   }
 
   async function handleDeleteRecurring(id: string, descricao: string) {
     if (!confirm(`Parar de lançar "${descricao}" todo mês?`)) return;
     const { error } = await supabase.from('recurring').delete().eq('id', id);
-    if (!error) setRecurring((prev) => prev.filter((r) => r.id !== id));
+    if (error) return setAvisoErro('Não consegui apagar esse gasto fixo.');
+    setRecurring((prev) => prev.filter((r) => r.id !== id));
   }
 
   async function handleTogglePaid(p: Installment) {
     const novo = !p.paid;
     const { error } = await supabase.from('installments').update({ paid: novo }).eq('id', p.id);
-    if (!error) {
-      setInstallments((prev) => prev.map((x) => (x.id === p.id ? { ...x, paid: novo } : x)));
-    }
+    if (error) return setAvisoErro('Não consegui marcar essa parcela.');
+    setInstallments((prev) => prev.map((x) => (x.id === p.id ? { ...x, paid: novo } : x)));
   }
 
   async function handleSaveEdit(t: Transaction) {
@@ -327,10 +341,10 @@ export default function Home() {
         description: t.description,
       })
       .eq('id', t.id);
-    if (!error) {
-      setTransactions((prev) => prev.map((x) => (x.id === t.id ? t : x)));
-      setEditando(null);
-    }
+    // O modal fica aberto quando falha: fechá-lo daria a entender que salvou.
+    if (error) return setAvisoErro('Não consegui salvar esse lançamento.');
+    setTransactions((prev) => prev.map((x) => (x.id === t.id ? t : x)));
+    setEditando(null);
   }
 
   async function handleSaveRecurring(r: Recorrente) {
@@ -338,10 +352,9 @@ export default function Home() {
       .from('recurring')
       .update({ description: r.description, amount: r.amount, day_of_month: r.day_of_month, category: r.category })
       .eq('id', r.id);
-    if (!error) {
-      setRecurring((prev) => prev.map((x) => (x.id === r.id ? r : x)).sort((a, b) => a.day_of_month - b.day_of_month));
-      setEditandoRec(null);
-    }
+    if (error) return setAvisoErro('Não consegui salvar esse gasto fixo.');
+    setRecurring((prev) => prev.map((x) => (x.id === r.id ? r : x)).sort((a, b) => a.day_of_month - b.day_of_month));
+    setEditandoRec(null);
   }
 
   async function handleSaveSaving(s: Saving) {
@@ -349,10 +362,9 @@ export default function Home() {
       .from('savings')
       .update({ amount: s.amount, jar: s.jar, description: s.description })
       .eq('id', s.id);
-    if (!error) {
-      setSavings((prev) => prev.map((x) => (x.id === s.id ? s : x)));
-      setEditandoPote(null);
-    }
+    if (error) return setAvisoErro('Não consegui salvar esse lançamento do cofrinho.');
+    setSavings((prev) => prev.map((x) => (x.id === s.id ? s : x)));
+    setEditandoPote(null);
   }
 
   // Cofrinho não é uma tabela: o nome vive em cada lançamento. Renomear é
@@ -373,7 +385,7 @@ export default function Home() {
       .update({ jar: novo })
       .in('id', alvos.map((s) => s.id));
 
-    if (error) return;
+    if (error) return setAvisoErro('Não consegui renomear esse cofrinho.');
 
     const ids = new Set(alvos.map((s) => s.id));
     setSavings((prev) => prev.map((s) => (ids.has(s.id) ? { ...s, jar: novo } : s)));
@@ -393,7 +405,8 @@ export default function Home() {
 
   async function handleDeleteCategory(id: string) {
     const { error } = await supabase.from('categories').delete().eq('id', id);
-    if (!error) setCategories((prev) => prev.filter((c) => c.id !== id));
+    if (error) return setAvisoErro('Não consegui apagar essa categoria.');
+    setCategories((prev) => prev.filter((c) => c.id !== id));
   }
 
   // Apaga a compra inteira, não uma parcela solta: sobrar "parcela 3 de 6" sem as
@@ -401,13 +414,15 @@ export default function Home() {
   async function handleDeletePurchase(purchaseId: string, descricao: string) {
     if (!confirm(`Apagar "${descricao}" e todas as suas parcelas?`)) return;
     const { error } = await supabase.from('installments').delete().eq('purchase_id', purchaseId);
-    if (!error) setInstallments((prev) => prev.filter((p) => p.purchase_id !== purchaseId));
+    if (error) return setAvisoErro('Não consegui apagar esse parcelamento.');
+    setInstallments((prev) => prev.filter((p) => p.purchase_id !== purchaseId));
   }
 
   async function handleDeleteSaving(id: string) {
     if (!confirm('Apagar esse lançamento do cofrinho?')) return;
     const { error } = await supabase.from('savings').delete().eq('id', id);
-    if (!error) setSavings((prev) => prev.filter((s) => s.id !== id));
+    if (error) return setAvisoErro('Não consegui apagar esse lançamento do cofrinho.');
+    setSavings((prev) => prev.filter((s) => s.id !== id));
   }
 
   async function handleLogout() {
@@ -695,6 +710,29 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[var(--areia)] px-4 py-6 sm:py-8">
+      {/* Fica fixo no topo porque a operação que falhou pode estar em qualquer
+          parte da página, inclusive fora da área visível no momento.
+          role="alert" faz o leitor de tela anunciar sem precisar de foco. */}
+      {avisoErro && (
+        <div
+          role="alert"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,30rem)] flex items-start gap-3 px-4 py-3 rounded-xl bg-[var(--carmim)] text-[var(--sobre-cor)] shadow-lg"
+        >
+          <span className="text-lg leading-6" aria-hidden="true">⚠️</span>
+          <p className="flex-1 text-base leading-6">
+            {avisoErro} <span className="opacity-85">Tenta de novo em instantes.</span>
+          </p>
+          <button
+            type="button"
+            onClick={() => setAvisoErro(null)}
+            aria-label="Fechar aviso"
+            className="p-1 -mr-1 rounded-lg hover:bg-black/20 transition shrink-0"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto">
         <header className="flex flex-wrap items-center justify-between gap-4 mb-7">
           <div className="flex items-center gap-3">

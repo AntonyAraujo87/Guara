@@ -524,23 +524,41 @@ async function runRecurringForToday() {
   if (error) throw error;
 
   const lancados = [];
+  const falhas = [];
   for (const r of data || []) {
     if (r.last_run === mesAtual) continue;
     // Dia 31 num mês de 30 dias vira o último dia, senão nunca lançaria.
     const diaEfetivo = Math.min(r.day_of_month, ultimoDiaDoMes);
     if (dia < diaEfetivo) continue;
 
-    await supabaseAdmin.from('transactions').insert({
-      user_phone: r.user_phone,
-      amount: r.amount,
-      type: r.type,
-      category: r.category,
-      description: r.description,
-    });
-    await supabaseAdmin.from('recurring').update({ last_run: mesAtual }).eq('id', r.id);
-    lancados.push(r);
+    // Cada lançamento no seu próprio try: sem isso, uma linha com problema
+    // aborta a rotina inteira e ninguém — nem os outros usuários — tem os
+    // gastos fixos lançados naquele dia.
+    try {
+      const { error: insError } = await supabaseAdmin.from('transactions').insert({
+        user_phone: r.user_phone,
+        amount: r.amount,
+        type: r.type,
+        category: r.category,
+        description: r.description,
+      });
+      if (insError) throw insError;
+
+      // Só marca como lançado depois que a transação existe. Ao contrário,
+      // uma falha aqui faria o mês inteiro ser pulado silenciosamente.
+      const { error: upError } = await supabaseAdmin
+        .from('recurring')
+        .update({ last_run: mesAtual })
+        .eq('id', r.id);
+      if (upError) throw upError;
+
+      lancados.push(r);
+    } catch (err) {
+      console.error(`Falha ao lançar recorrente ${r.id} (${r.description}):`, err.message);
+      falhas.push({ id: r.id, description: r.description, erro: err.message });
+    }
   }
-  return lancados;
+  return { lancados, falhas };
 }
 
 // ── METAS ──────────────────────────────────────────────────────────
