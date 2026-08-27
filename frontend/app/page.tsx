@@ -481,6 +481,23 @@ export default function Home() {
     return { aReceber, aPagar };
   }, [debts]);
 
+  // Agrupa o cofrinho por pote. Lançamento sem nome cai em "Geral", senão sumiria.
+  //
+  // Precisa ficar ACIMA dos returns antecipados logo abaixo. Estava depois, e o
+  // resultado era que quem não estava logado renderizava 21 hooks e quem estava
+  // renderizava 22 — o React exige a mesma quantidade em toda renderização e
+  // derrubava o app inteiro (erro #310) assim que a sessão carregava.
+  const potes = useMemo(() => {
+    const mapa: Record<string, number> = {};
+    for (const l of savings) {
+      const nome = (l.jar || '').trim() || 'Geral';
+      mapa[nome] = (mapa[nome] || 0) + Number(l.amount);
+    }
+    return Object.entries(mapa)
+      .map(([nome, total]) => ({ nome, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [savings]);
+
   const chartSurface = isDark ? '#211a12' : '#fffbf4';
   const gridColor = isDark ? '#3a2e21' : '#d8c6ac';
   const mutedText = isDark ? '#9c8a72' : '#8a7358';
@@ -507,18 +524,6 @@ export default function Home() {
   const fixosDoMes = recurring
     .filter((r) => r.type === 'despesa')
     .reduce((s, r) => s + Number(r.amount), 0);
-
-  // Agrupa o cofrinho por pote. Lançamento sem nome cai em "Geral", senão sumiria.
-  const potes = useMemo(() => {
-    const mapa: Record<string, number> = {};
-    for (const l of savings) {
-      const nome = (l.jar || '').trim() || 'Geral';
-      mapa[nome] = (mapa[nome] || 0) + Number(l.amount);
-    }
-    return Object.entries(mapa)
-      .map(([nome, total]) => ({ nome, total }))
-      .sort((a, b) => b.total - a.total);
-  }, [savings]);
 
   // Padrão + personalizadas, sem repetir nome.
   const categoriasDisponiveis = (kind: 'despesa' | 'receita') => {

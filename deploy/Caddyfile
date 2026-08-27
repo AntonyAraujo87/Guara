@@ -10,9 +10,26 @@
 }
 
 168-138-141-214.sslip.io {
+	# Log de acesso ligado pra diagnostico: sem isso o Caddy so registra erro,
+	# e nao da pra saber se a requisicao do navegador chega a chegar aqui.
+	log {
+		output stdout
+		format json
+	}
+
 	# Manda o navegador esquecer o anúncio de HTTP/3 que ele já guardou. Sem isso,
 	# quem visitou antes continuaria tentando QUIC por até 30 dias.
 	header Alt-Svc "clear"
+
+	# O HTML nunca pode ficar presa em cache. Ele referencia os arquivos JS pelo
+	# nome, e nome muda a cada publicacao — um HTML velho aponta pra codigo que
+	# nao existe mais, e o app simplesmente nao sobe. Os arquivos sob
+	# /_next/static tem o hash no nome, entao esses podem seguir imutaveis.
+	@estatico path /_next/static/*
+	@documento not path /_next/static/*
+	# O ">" substitui o cabecalho do Next em vez de somar outro: dois
+	# Cache-Control na mesma resposta deixam o comportamento indefinido.
+	header @documento >Cache-Control "no-cache, must-revalidate"
 
 	reverse_proxy backend:3001 {
 		# Durante uma publicação o container reinicia. Em vez de devolver erro
