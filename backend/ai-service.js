@@ -61,6 +61,7 @@ Gatilhos: "todo mês pago 50 de netflix", "todo dia 10 pago 1200 de aluguel", "m
 {"kind": "editar_recorrente", "description": string, "dayOfMonth": number, "amount": number, "escopo": "um" | "lote" | "todos"}
 Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora é 1300", "corrige a Netflix pra 55", "mudou pro dia 20", "esses últimos são todos dia 5".
 - description = qual recorrente mudar, se a pessoa citar (ex: "salário", "aluguel"). Se ela não disser qual, deixe string vazia.
+- Se ela citar VÁRIOS nomes numa frase só ("muda a Netflix, o Prime, a Vivo e o YouTube pro dia 11"), retorne UM ITEM PARA CADA NOME, cada um com seu próprio description e escopo "um". Nunca devolva só o primeiro nome — os outros seriam silenciosamente ignorados.
 - escopo = a QUANTOS lançamentos a correção se aplica. Preste muita atenção nisso:
   - "um" (padrão) = fala de um lançamento só. Citou o nome ("muda o salário pro dia 10") ou corrige o que acabou de cadastrar ("na verdade é dia 5", "era 200").
   - "lote" = refere-se ao que ela ACABOU DE MANDAR, sem citar nomes. Gatilhos: "esses últimos que mandei", "os que mandei agora", "esses aí são todos", "essas assinaturas são", "os últimos são".
@@ -96,11 +97,12 @@ Regras:
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
-- Quando a mensagem for "ajuda", "meta", "editar_recorrente" ou "desfazer", retorne SÓ esse item, sozinho na lista.
-- "recorrente", "parcela_paga" e "consulta" PODEM vir em lote — uma pessoa junta coisas numa mensagem só. Retorne UM ITEM PARA CADA, nunca só o primeiro:
+- Quando a mensagem for "ajuda", "meta" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- "recorrente", "parcela_paga", "consulta" e "editar_recorrente" PODEM vir em lote — uma pessoa junta coisas numa mensagem só. Retorne UM ITEM PARA CADA, nunca só o primeiro:
   - "59,90 na Netflix / 29,90 no Prime / 30 na Vivo" = 3 itens "recorrente".
   - "paguei a parcela da TV e a do celular" = 2 itens "parcela_paga".
   - "quanto gastei esse mês e quanto tenho guardado" = 2 itens "consulta".
+  - "muda a Netflix, o Prime e a Vivo pro dia 11" = 3 itens "editar_recorrente", um por nome, cada um com escopo "um".
 - Mas não invente itens: se a pessoa faz UMA pergunta só, devolva UM item de consulta. Não desmembre a mesma pergunta em várias.`;
 
 // Monta o trecho do prompt que ensina as categorias criadas pela própria pessoa.

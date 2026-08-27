@@ -269,7 +269,8 @@ async function processIncomingMessage(phone, text) {
   }
 
   if (intencao === 'editar_recorrente') {
-    await replyWhatsApp(phone, await responderEditarRecorrente(phone, items[0]));
+    const edicoes = items.filter((i) => i.kind === 'editar_recorrente');
+    await replyWhatsApp(phone, await responderEditarRecorrente(phone, edicoes));
     return;
   }
 
@@ -415,36 +416,70 @@ async function responderRecorrente(phone, itens) {
   return partes.join('\n');
 }
 
-async function responderEditarRecorrente(phone, item) {
-  if (item.dayOfMonth <= 0 && item.amount <= 0) {
+async function responderEditarRecorrente(phone, itens) {
+  const pedidos = (itens || []).filter((i) => i.dayOfMonth > 0 || i.amount > 0);
+  if (pedidos.length === 0) {
     return 'Não entendi o que mudar. 🤔\nTenta assim: _"muda o salário pro dia 5"_ ou _"o aluguel agora é 1300"_.';
   }
 
-  const r = await updateRecurring(phone, item);
-  if (!r) {
-    return item.description
-      ? `Não achei nenhum lançamento mensal de "${item.description}". 🤔`
+  // "muda a Netflix, o Prime e a Vivo pro dia 11" chega como três pedidos.
+  // Cada um mexe no seu, e o Set evita contar duas vezes se dois pedidos
+  // acabarem caindo no mesmo lançamento.
+  const alvos = [];
+  const vistos = new Set();
+  const naoAchados = [];
+
+  for (const pedido of pedidos) {
+    let r;
+    try {
+      r = await updateRecurring(phone, pedido);
+    } catch (err) {
+      console.error('Falha ao editar recorrente:', pedido.description, err.message);
+      naoAchados.push(pedido.description || '');
+      continue;
+    }
+    if (!r) {
+      naoAchados.push(pedido.description || '');
+      continue;
+    }
+    for (const a of r.alvos) {
+      if (vistos.has(a.id)) continue;
+      vistos.add(a.id);
+      alvos.push(a);
+    }
+  }
+
+  if (alvos.length === 0) {
+    const nome = naoAchados.find(Boolean);
+    return nome
+      ? `Não achei nenhum lançamento mensal de "${nome}". 🤔`
       : 'Você ainda não tem nenhum lançamento mensal cadastrado.\nPra criar: _"todo mês pago 50 de Netflix"_';
   }
 
-  const { alvos } = r;
+  const partes = [];
   if (alvos.length === 1) {
     const a = alvos[0];
-    return [
+    partes.push(
       '✏️ *Corrigido!*',
       '',
       `${a.description} — R$ ${currency.format(Number(a.amount))}`,
-      `Agora eu lanço todo dia *${a.day_of_month}*. 😉`,
-    ].join('\n');
+      `Agora eu lanço todo dia *${a.day_of_month}*. 😉`
+    );
+  } else {
+    // Em lote a pessoa não vê o que foi tocado — listar tudo é o que deixa ela
+    // perceber na hora se eu peguei um lançamento que não era pra pegar.
+    partes.push(`✏️ *${alvos.length} lançamentos corrigidos!*`, '');
+    for (const a of alvos) {
+      partes.push(`${a.type === 'receita' ? '💰' : '💸'} ${a.description} — R$ ${currency.format(Number(a.amount))} _(dia ${a.day_of_month})_`);
+    }
+    partes.push('', 'Se peguei algum sem querer, é só me falar qual. 😉');
   }
 
-  // Em lote a pessoa não vê o que foi tocado — listar tudo é o que deixa ela
-  // perceber na hora se eu peguei um lançamento que não era pra pegar.
-  const partes = [`✏️ *${alvos.length} lançamentos corrigidos!*`, ''];
-  for (const a of alvos) {
-    partes.push(`${a.type === 'receita' ? '💰' : '💸'} ${a.description} — R$ ${currency.format(Number(a.amount))} _(dia ${a.day_of_month})_`);
+  // Mudar três de quatro e só confirmar os três é o bug que estamos corrigindo.
+  const perdidos = naoAchados.filter(Boolean);
+  if (perdidos.length) {
+    partes.push('', `⚠️ Não achei lançamento mensal de: *${perdidos.join('*, *')}*`);
   }
-  partes.push('', 'Se peguei algum sem querer, é só me falar qual. 😉');
   return partes.join('\n');
 }
 

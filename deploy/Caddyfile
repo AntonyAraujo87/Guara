@@ -1,4 +1,19 @@
+{
+	# HTTP/3 desligado de propósito. O Caddy o anuncia por padrão via Alt-Svc, mas
+	# QUIC precisa de UDP 443 — que o docker-compose não publica e a rede da Oracle
+	# não libera. O navegador acreditava no anúncio, tentava por UDP, não achava
+	# ninguém e mostrava "This page couldn't load", guardando isso por 30 dias.
+	# Para religar um dia: publicar "443:443/udp" no compose E liberar UDP 443 na VCN.
+	servers {
+		protocols h1 h2
+	}
+}
+
 168-138-141-214.sslip.io {
+	# Manda o navegador esquecer o anúncio de HTTP/3 que ele já guardou. Sem isso,
+	# quem visitou antes continuaria tentando QUIC por até 30 dias.
+	header Alt-Svc "clear"
+
 	reverse_proxy backend:3001 {
 		# Durante uma publicação o container reinicia. Em vez de devolver erro
 		# na hora, o Caddy segura a requisição e tenta de novo até voltar.
