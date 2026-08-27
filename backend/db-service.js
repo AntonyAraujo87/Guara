@@ -372,18 +372,39 @@ async function markInstallmentPaid(phone, descricao) {
 
 // ── GASTOS RECORRENTES ─────────────────────────────────────────────
 async function saveRecurring(phone, { description, amount, type, category, dayOfMonth }) {
-  const { data, error } = await supabaseAdmin
+  const campos = {
+    user_phone: phone,
+    description,
+    amount,
+    type: type || 'despesa',
+    category: category || 'Outros',
+    day_of_month: Math.min(31, Math.max(1, Math.round(dayOfMonth) || 1)),
+  };
+
+  // Repetir "Netflix 59,90" não pode criar uma segunda Netflix: o lançamento
+  // automático rodaria duas vezes todo mês, cobrando em dobro no painel.
+  // Mesma descrição = a pessoa está corrigindo o valor ou o dia, não criando outro.
+  const { data: iguais } = await supabaseAdmin
     .from('recurring')
-    .insert({
-      user_phone: phone,
-      description,
-      amount,
-      type: type || 'despesa',
-      category: category || 'Outros',
-      day_of_month: Math.min(31, Math.max(1, Math.round(dayOfMonth) || 1)),
-    })
-    .select()
-    .single();
+    .select('id')
+    .eq('user_phone', phone)
+    .eq('active', true)
+    .ilike('description', description)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (iguais && iguais.length > 0) {
+    const { data, error } = await supabaseAdmin
+      .from('recurring')
+      .update(campos)
+      .eq('id', iguais[0].id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { ...data, atualizado: true };
+  }
+
+  const { data, error } = await supabaseAdmin.from('recurring').insert(campos).select().single();
   if (error) throw error;
   return data;
 }

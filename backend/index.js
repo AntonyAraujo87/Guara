@@ -243,8 +243,11 @@ async function processIncomingMessage(phone, text) {
     return;
   }
 
+  // Gasto fixo é a única intenção que registra e ainda assim pode vir em lote:
+  // "59,90 na Netflix / 29,90 no Prime / 30 na Vivo" é uma mensagem só.
   if (intencao === 'recorrente') {
-    await replyWhatsApp(phone, await responderRecorrente(phone, items[0]));
+    const recorrentes = items.filter((i) => i.kind === 'recorrente');
+    await replyWhatsApp(phone, await responderRecorrente(phone, recorrentes));
     return;
   }
 
@@ -333,28 +336,63 @@ async function confirmarGuardado(phone, item) {
   return partes.join('\n');
 }
 
-async function responderRecorrente(phone, item) {
-  if (!item.amount || item.amount <= 0) {
+async function responderRecorrente(phone, itens) {
+  const validos = (itens || []).filter((i) => i.amount > 0);
+  if (validos.length === 0) {
     return 'Não entendi o valor. 🤔\nTenta assim: _"todo mês pago 50 de Netflix"_';
   }
 
-  const salvo = await saveRecurring(phone, item);
+  const salvos = [];
+  for (const item of validos) {
+    try {
+      salvos.push(await saveRecurring(phone, item));
+    } catch (err) {
+      console.error('Falha ao salvar recorrente:', item.description, err.message);
+    }
+  }
+  if (salvos.length === 0) {
+    return 'Não consegui anotar agora. 😕\nTenta de novo daqui a pouco, por favor.';
+  }
+
+  const partes = [];
+  if (salvos.length === 1) {
+    const s = salvos[0];
+    const verbo = s.type === 'receita' ? 'Recebimento' : 'Gasto';
+    partes.push(
+      s.atualizado ? `🔁 *${verbo} mensal atualizado!*` : `🔁 *${verbo} mensal anotado!*`,
+      '',
+      `${s.description} — R$ ${currency.format(Number(s.amount))}`,
+      `Todo dia *${s.day_of_month}* eu lanço sozinho pra você. 😉`
+    );
+  } else {
+    const novos = salvos.filter((s) => !s.atualizado).length;
+    const mexidos = salvos.length - novos;
+    const titulo = mexidos === 0 ? `${salvos.length} lançamentos mensais anotados!`
+      : novos === 0 ? `${salvos.length} lançamentos mensais atualizados!`
+      : `${novos} anotados e ${mexidos} atualizados!`;
+    partes.push(`🔁 *${titulo}*`, '');
+    for (const s of salvos) {
+      partes.push(`${s.type === 'receita' ? '💰' : '💸'} ${s.description} — R$ ${currency.format(Number(s.amount))} _(dia ${s.day_of_month})_`);
+    }
+    partes.push('', 'Eu lanço todos sozinho, no dia certo. 😉');
+  }
+
+  // Separar gasto de entrada: somar tudo junto daria um número que não significa nada.
   const lista = await listRecurring(phone);
-  const totalMes = lista
-    .filter((r) => r.type === 'despesa')
-    .reduce((s, r) => s + Number(r.amount), 0);
+  const soma = (tipo) => lista.filter((r) => r.type === tipo).reduce((s, r) => s + Number(r.amount), 0);
+  const despesas = lista.filter((r) => r.type === 'despesa');
+  const receitas = lista.filter((r) => r.type === 'receita');
 
-  const verbo = salvo.type === 'receita' ? 'Recebimento' : 'Gasto';
-  const partes = [
-    `🔁 *${verbo} mensal anotado!*`,
-    '',
-    `${salvo.description} — R$ ${currency.format(Number(salvo.amount))}`,
-    `Todo dia *${salvo.day_of_month}* eu lanço sozinho pra você. 😉`,
-  ];
-
-  if (lista.length > 1) {
-    partes.push('', `Você tem *${lista.length}* lançamentos mensais.`);
-    if (totalMes > 0) partes.push(`Seus gastos fixos somam R$ ${currency.format(totalMes)} por mês.`);
+  if (lista.length > salvos.length) {
+    partes.push('', '*📋 SEU MÊS FIXO*');
+    if (despesas.length) partes.push(`💸 ${despesas.length} gasto${despesas.length > 1 ? 's' : ''} — R$ ${currency.format(soma('despesa'))}`);
+    if (receitas.length) partes.push(`💰 ${receitas.length} entrada${receitas.length > 1 ? 's' : ''} — R$ ${currency.format(soma('receita'))}`);
+    const sobra = soma('receita') - soma('despesa');
+    if (receitas.length && despesas.length) {
+      partes.push(sobra >= 0
+        ? `✅ Sobram R$ ${currency.format(sobra)} por mês`
+        : `⚠️ Faltam R$ ${currency.format(Math.abs(sobra))} por mês`);
+    }
   }
   return partes.join('\n');
 }
