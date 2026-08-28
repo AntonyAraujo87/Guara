@@ -418,6 +418,52 @@ const ESPERAS_MS = [700, 2000];
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ── DISJUNTOR ──────────────────────────────────────────────────────
+// A cota gratuita da Gemini é DIÁRIA. Quando ela acaba, insistir não traz
+// nenhuma resposta e ainda faz a pessoa esperar meio minuto por um erro certo:
+// cada mensagem gastava até seis chamadas (três tentativas em dois modelos)
+// pra descobrir o que a primeira já tinha dito.
+//
+// Com o disjuntor, a primeira mensagem descobre e as seguintes vão direto pro
+// leitor simples — resposta instantânea em vez de espera inútil.
+//
+// A cota zera à meia-noite no Pacífico. Bloquear só até lá é preciso: nem
+// desiste cedo demais, nem fica religando a cada minuto pra tomar o mesmo não.
+const modelosSemCota = new Map();
+
+function proximaViradaPacifico() {
+  const agora = new Date();
+  // O Pacífico é UTC-7 no horário de verão e UTC-8 fora dele. Usar sempre -7
+  // faz o desbloqueio acontecer até uma hora ANTES da virada real — e uma
+  // tentativa a mais custa uma chamada, enquanto uma hora a mais de bloqueio
+  // custa uma hora de app degradado.
+  const meiaNoitePT = new Date(agora);
+  meiaNoitePT.setUTCHours(7, 0, 0, 0);
+  if (meiaNoitePT <= agora) meiaNoitePT.setUTCDate(meiaNoitePT.getUTCDate() + 1);
+  return meiaNoitePT.getTime();
+}
+
+function semCotaDiaria(mensagem) {
+  return /quota/i.test(mensagem) && /perday|per day|daily/i.test(mensagem);
+}
+
+function modeloDisponivel(nome) {
+  const ate = modelosSemCota.get(nome);
+  if (!ate) return true;
+  if (Date.now() >= ate) {
+    modelosSemCota.delete(nome);
+    return true;
+  }
+  return false;
+}
+
+function desligarAteVirada(nome) {
+  const ate = proximaViradaPacifico();
+  modelosSemCota.set(nome, ate);
+  const horas = ((ate - Date.now()) / 3_600_000).toFixed(1);
+  console.error(`Cota diária de ${nome} esgotada. Só tento de novo em ${horas}h.`);
+}
+
 async function extractItems(rawText, categoriasExtras = []) {
   const texto = sanitizarTexto(rawText);
   if (!texto) return [];
@@ -431,10 +477,17 @@ async function extractItems(rawText, categoriasExtras = []) {
     Array.from({ length: TENTATIVAS }, (_, n) => ({ modelo, attempt: n + 1 }))
   );
 
+  // Todos sem cota: nem tenta. Quem chama cai no leitor simples na hora, em
+  // vez de esperar seis timeouts pra ouvir o mesmo não.
+  if (!MODELOS.some(modeloDisponivel)) {
+    throw new Error('Cota diária esgotada em todos os modelos (quota PerDay)');
+  }
+
   let lastError;
   let modeloDesistido = null;
   for (const { modelo: nomeDoModelo, attempt } of PLANO) {
     if (nomeDoModelo === modeloDesistido) continue;
+    if (!modeloDisponivel(nomeDoModelo)) continue;
     const model = genAI.getGenerativeModel({ model: nomeDoModelo });
     try {
       const result = await model.generateContent(
@@ -448,6 +501,7 @@ async function extractItems(rawText, categoriasExtras = []) {
         ],
         { timeout: timeoutDe(nomeDoModelo) }
       );
+      modelosSemCota.delete(nomeDoModelo);
       const responseText = result.response.text().trim();
       const cleaned = responseText.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
@@ -636,6 +690,7 @@ async function extractItems(rawText, categoriasExtras = []) {
       // Cota estourada ou serviço fora: insistir no MESMO modelo não adianta.
       // Pula as tentativas que sobraram dele e vai pro reserva, que tem cota
       // própria e uma fila diferente.
+      if (semCotaDiaria(err.message)) desligarAteVirada(nomeDoModelo);
       if (/429|quota|503|unavailable|overloaded/i.test(err.message)) {
         modeloDesistido = nomeDoModelo;
         continue;
