@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { extractItems, transcreverAudio, lerImagem } = require('./ai-service');
 const { baixarAudio, baixarImagem } = require('./media-service');
+const { lerSemIA } = require('./leitura-simples');
 const {
   saveTransaction,
   saveDebt,
@@ -129,6 +130,27 @@ Funciona igual dos dois jeitos. 😉`;
 // dados que já estão na tela. Mandar por WhatsApp exigiria gerar o arquivo no
 // servidor e subir como mídia — e a pessoa ia receber um anexo que o WhatsApp
 // abre mal. O link resolve, e ainda deixa ela escolher o mês.
+// Quando a IA está fora e a frase é complicada demais pro leitor simples.
+// Dizer O QUE dá pra fazer agora vale mais do que pedir desculpa: a pessoa
+// consegue registrar do jeito curto e não perde o gasto.
+const MSG_IA_FORA = `Tive um problema pra entender essa frase. 😕
+
+*Enquanto isso, do jeito curto eu anoto:*
+_"paguei 30 no mercado"_
+_"recebi 500"_
+_"guardei 200"_
+
+Frases mais compridas eu volto a entender já já.`;
+
+const MSG_SEM_COTA = `Bati o limite de mensagens do dia pra entender frase complicada. 😅
+
+*Mas do jeito curto eu continuo anotando:*
+_"paguei 30 no mercado"_
+_"recebi 500"_
+_"guardei 200"_
+
+Amanhã cedo volto ao normal — e nada do que você já mandou se perdeu.`;
+
 const MSG_CONVERSA = `Tô por aqui! 🐺
 
 Manda o gasto quando quiser, do seu jeito — escrito, por áudio, ou foto do comprovante.
@@ -342,13 +364,21 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
     items = await extractItems(text, categoriasExtras);
   } catch (err) {
     console.error('Falha ao interpretar mensagem:', err.message);
-    const sobrecarga = /429|quota|rate/i.test(err.message);
-    await replyWhatsApp(
-      phone,
-      sobrecarga
-        ? 'Ufa, recebi muita mensagem de uma vez e preciso de um minutinho. 😅\nMe manda de novo daqui a pouco que eu anoto!'
-        : 'Tive um probleminha pra entender sua mensagem. 😕\nTenta mandar de novo, por favor.'
-    );
+
+    // A IA caiu, mas nem toda mensagem precisa dela. "Paguei 30 no mercado" é
+    // simples o bastante pra ler sem modelo nenhum — e anotar o gasto vale
+    // muito mais do que um pedido de desculpas.
+    //
+    // O leitor simples só responde quando tem certeza; nos outros casos devolve
+    // null e a pessoa recebe o aviso honesto abaixo.
+    const simples = lerSemIA(text);
+    if (simples) {
+      await salvarEResponder(phone, [simples], carteiraAtiva);
+      return;
+    }
+
+    const semCota = /quota|429/i.test(err.message) && /perday|per day|daily/i.test(err.message);
+    await replyWhatsApp(phone, semCota ? MSG_SEM_COTA : MSG_IA_FORA);
     return;
   }
 
@@ -634,7 +664,7 @@ async function salvarEResponder(phone, items, carteiraAtiva) {
     const varios = new Set(ondeSalvou).size > 1;
     const corpo = varios
       ? formatConfirmationPorCarteira(saved, ondeSalvou)
-      : formatConfirmation(saved) + avisoDeData(saved) + (foraDaAtiva.length ? `${NL}_(na carteira *${foraDaAtiva[0]}*)_` : '');
+      : formatConfirmation(saved) + avisoDeData(saved) + avisoDeLeituraSimples(saved) + (foraDaAtiva.length ? `${NL}_(na carteira *${foraDaAtiva[0]}*)_` : '');
     await replyWhatsApp(phone, corpo + (await perguntaDeAssinatura(phone, saved)));
   }
 
@@ -850,6 +880,13 @@ async function responderEditarRecorrente(phone, itens) {
 // descobriria no mês seguinte. Então pergunta, e um "sim" resolve.
 // "gastei 50 ontem" entra em ontem. Sem dizer isso, a pessoa procura o
 // lançamento no dia de hoje, não acha, e conclui que não foi salvo.
+// Leitura sem IA acerta o valor, mas a categoria é chute de palavra-chave.
+// Dizer isso deixa a pessoa conferir em vez de descobrir depois no gráfico.
+function avisoDeLeituraSimples(saved) {
+  if (!saved.some((i) => i.simples)) return '';
+  return `${NL}_(li do jeito simples, a IA está fora — confere a categoria)_`;
+}
+
 function avisoDeData(saved) {
   const dias = saved.map((i) => Number(i.diasAtras) || 0).filter((d) => d > 0);
   if (dias.length === 0) return '';
