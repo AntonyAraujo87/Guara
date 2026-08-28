@@ -138,12 +138,28 @@ const NAO = /^(n|nao|não|nn|negativo|so esse mes|só esse mês|so esse|nao é|n
 // inteiro dentro desse contexto. Quem nunca criou uma segunda carteira nem
 // percebe: cai sempre na padrão.
 async function processIncomingMessage(phone, text) {
-  await ensureUser(phone);
+  const { primeiraVez } = await ensureUser(phone);
   const { ativa } = await contextoDeCarteira(phone);
-  return comCarteira(ativa, () => atenderMensagem(phone, text, ativa));
+  return comCarteira(ativa, () => atenderMensagem(phone, text, ativa, primeiraVez));
 }
 
-async function atenderMensagem(phone, text, carteiraAtiva) {
+async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) {
+  // Primeiro "oi" da vida da pessoa: apresentação, sempre — não importa o que
+  // ela escreveu nem se a IA entendeu.
+  //
+  // Antes isso dependia da IA NÃO entender a mensagem, o que ficou errado no dia
+  // em que "oi" passou a ser reconhecido: quem chegava recebia um "tô por aqui"
+  // genérico como primeira impressão. E quem já usava há meses sem conta levava
+  // a apresentação inteira toda vez que escrevia algo solto.
+  if (primeiraVez) {
+    await replyWhatsApp(phone, MSG_APRESENTACAO);
+    await replyWhatsApp(phone, MSG_CRIAR_CONTA);
+    // Um "oi" já foi respondido pela apresentação. Mas se veio um gasto junto,
+    // ele continua o caminho e é registrado normalmente.
+    const soCumprimento = /^(oi|ola|olá|bom dia|boa tarde|boa noite|eai|e ai|opa|hey|hi|alo|alô|tudo bem|tudo bom)[!?.\s]*$/i;
+    if (soCumprimento.test(String(text).trim())) return;
+  }
+
 
   const cru = String(text).trim();
   if (SIM.test(cru)) {
@@ -193,14 +209,10 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
   }
 
   if (items.length === 0) {
-    // O bot já funciona sem conta nenhuma, então a apresentação convida a usar
-    // AGORA. O cadastro só é pedido depois do primeiro gasto registrado.
-    if (await isPhoneLinked(phone)) {
-      await replyWhatsApp(phone, MSG_NAO_ENTENDI);
-    } else {
-      await replyWhatsApp(phone, MSG_APRESENTACAO);
-      await replyWhatsApp(phone, MSG_CRIAR_CONTA);
-    }
+    // A apresentação saiu daqui: ela agora é do primeiro contato, e não de
+    // "a IA não entendeu". Quem usa há meses sem conta não pode levar o
+    // onboarding inteiro toda vez que escreve algo solto.
+    if (!primeiraVez) await replyWhatsApp(phone, MSG_NAO_ENTENDI);
     return;
   }
 
@@ -260,7 +272,9 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
   // Cumprimento, agradecimento, desabafo. Não é erro, e responder "não entendi"
   // pra um "valeu" faz o Guará parecer burro.
   if (intencao === 'conversa') {
-    await replyWhatsApp(phone, MSG_CONVERSA);
+    // No primeiro contato a apresentação já foi, e um "tô por aqui" logo
+    // depois seria a segunda mensagem dizendo menos que a primeira.
+    if (!primeiraVez) await replyWhatsApp(phone, MSG_CONVERSA);
     return;
   }
 

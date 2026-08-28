@@ -32,6 +32,13 @@ function comCarteira(carteira, fn) {
 }
 
 async function ensureUser(phone) {
+  // A leitura vem ANTES do upsert de propósito: depois dele, last_message_at já
+  // está preenchido e não há mais como saber que era a primeira mensagem
+  // daquela pessoa. É a diferença entre dar boas-vindas e dar um "tô por aqui"
+  // pra quem nunca falou com o Guará.
+  const { data: antes } = await supabaseAdmin
+    .from('users').select('last_message_at').eq('phone', phone).maybeSingle();
+
   // upsert atômico: cria o usuário se for a 1ª mensagem, e sempre marca quando foi a última
   // mensagem recebida (usado pra saber se a conversa está "aberta" pra fins de política do WhatsApp)
   const { data, error } = await supabaseAdmin
@@ -41,7 +48,7 @@ async function ensureUser(phone) {
     .single();
 
   if (error) throw error;
-  return data;
+  return { ...data, primeiraVez: !antes?.last_message_at };
 }
 
 // Quando o lançamento aconteceu. Gasto contado hoje mas ocorrido ontem
