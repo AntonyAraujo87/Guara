@@ -700,6 +700,21 @@ const INVISIVEIS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u
 // Quantos dias atrás o gasto aconteceu. Fora da faixa vira 0: um número
 // estranho vindo do modelo não pode empurrar lançamento pra 1970 nem pro ano
 // que vem — na dúvida, hoje é o palpite menos errado.
+// O maior valor que numeric(12,2) aceita: 9.999.999.999,99. Acima disso o
+// insert falha e a pessoa perde o lançamento sem entender por quê.
+//
+// E "Infinity" PASSA em `n > 0` — vinha de "1e400" ou da palavra literal, que
+// um modelo pode devolver, e ia direto pro banco.
+const VALOR_MAXIMO = 9_999_999_999.99;
+const LIMITE_ITENS = 15;
+
+function valorValido(bruto) {
+  const n = Number(bruto);
+  if (!Number.isFinite(n)) return 0;
+  const positivo = Math.abs(n);
+  return positivo > VALOR_MAXIMO ? 0 : Math.round(positivo * 100) / 100;
+}
+
 function diasValidos(bruto) {
   const n = Math.round(Number(bruto));
   return Number.isFinite(n) && n > 0 && n <= 365 ? n : 0;
@@ -808,10 +823,24 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
       if (!Array.isArray(parsed)) {
         throw new Error('Resposta da IA não é uma lista: ' + cleaned.slice(0, 120));
       }
-      // Lista vazia é resposta válida (mensagem sem nada financeiro, ex: "oi") — não adianta repetir.
-      if (parsed.length === 0) return [];
 
-      return parsed.map((item) => {
+      // Item que não é objeto — null, número, string solta — explodia no
+      // primeiro item.kind, queimava as três tentativas e derrubava a mensagem
+      // inteira por causa de um elemento de lixo no meio da lista.
+      const itens = parsed.filter((i) => i && typeof i === 'object' && !Array.isArray(i));
+
+      // Teto de itens. Ninguém conta quinze fatos financeiros distintos numa
+      // mensagem; lista desse tamanho é alucinação ou ataque, e sem teto viraria
+      // quinze escritas no banco.
+      if (itens.length > LIMITE_ITENS) {
+        console.error(`IA devolveu ${itens.length} itens; usando os ${LIMITE_ITENS} primeiros.`);
+        itens.length = LIMITE_ITENS;
+      }
+
+      // Lista vazia é resposta válida (mensagem sem nada financeiro, ex: "oi") — não adianta repetir.
+      if (itens.length === 0) return [];
+
+      return itens.map((item) => {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
         }
@@ -839,7 +868,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           return {
             kind: 'editar_lancamento',
             description: item.description || '',
-            amount: Number(item.amount) || 0,
+            amount: valorValido(item.amount),
             category: item.category || '',
             novaDescricao: item.novaDescricao || '',
           };
@@ -889,7 +918,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             para: item.para === 'recorrente' ? 'recorrente' : 'parcelamento',
             installments: Number(item.installments) || 0,
             dayOfMonth: Number(item.dayOfMonth) || 0,
-            amount: Number(item.amount) || 0,
+            amount: valorValido(item.amount),
           };
         }
         if (item.kind === 'apagar_dados') {
@@ -905,7 +934,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             kind: 'recorrente',
             carteira: (item.carteira || '').trim(),
             description: item.description || rawText.slice(0, 80),
-            amount: Math.abs(Number(item.amount)),
+            amount: valorValido(item.amount),
             type: item.type === 'receita' ? 'receita' : 'despesa',
             category: item.category || 'Outros',
             dayOfMonth: Number(item.dayOfMonth) || 1,
@@ -916,7 +945,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             kind: 'guardado',
             carteira: (item.carteira || '').trim(),
             diasAtras: diasValidos(item.diasAtras),
-            amount: Math.abs(Number(item.amount)),
+            amount: valorValido(item.amount),
             direction: item.direction === 'retirar' ? 'retirar' : 'guardar',
             jar: (item.jar || '').trim(),
             jarVago: item.jarVago === true,
@@ -930,7 +959,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             kind: 'editar_recorrente',
             description: (item.description || '').trim(),
             dayOfMonth: Number(item.dayOfMonth) || 0,
-            amount: Number(item.amount) || 0,
+            amount: valorValido(item.amount),
             escopo,
           };
         }
@@ -971,7 +1000,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             kind: 'divida',
             carteira: (item.carteira || '').trim(),
             diasAtras: diasValidos(item.diasAtras),
-            amount: Number(item.amount),
+            amount: valorValido(item.amount),
             direction: item.direction,
             person: item.person || '',
             description: item.description || rawText.slice(0, 80),
@@ -981,7 +1010,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           kind: 'transacao',
           carteira: (item.carteira || '').trim(),
           diasAtras: diasValidos(item.diasAtras),
-          amount: Number(item.amount),
+          amount: valorValido(item.amount),
           type: item.type,
           category: item.category,
           // Serviço que costuma ser mensal. Só um palpite: quem decide é a
