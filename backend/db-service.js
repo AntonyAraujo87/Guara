@@ -1137,7 +1137,9 @@ async function apagarCarteira(phone, nome) {
       .update({ wallet: CARTEIRA_PADRAO })
       .eq('user_phone', phone)
       .eq('wallet', alvo)
-      .select('id');
+      // user_phone e não id: goals não tem id — a chave dela é composta
+      // (user_phone, wallet), e pedir id derrubava a exclusão inteira.
+      .select('user_phone');
     if (error) throw error;
     movidos += (data || []).length;
   }
