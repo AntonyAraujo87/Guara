@@ -24,6 +24,9 @@ const SECOES: Secao[] = [
     paragrafos: [
       'O Guará é um assistente financeiro automatizado. Você conta seus gastos e recebimentos por mensagem no WhatsApp, e ele organiza tudo — com um painel na web para ver gráficos, navegar entre meses e exportar planilha.',
       'A conversa é lida por inteligência artificial, que extrai valor, tipo e categoria do que você escreveu. Todos os cálculos (saldo, totais, comparações) são feitos pelo sistema, a partir dos dados guardados.',
+      'Você também pode mandar áudio, ou a foto de um comprovante: nos dois casos o conteúdo é convertido em texto e vira um lançamento normal. O arquivo em si não é guardado — só o lançamento que saiu dele. Transcrição e leitura de comprovante erram às vezes, e por isso o Guará sempre mostra o que entendeu antes de você seguir.',
+      'Se quiser, dá para separar o dinheiro em carteiras — por exemplo, uma pessoal e uma do trabalho. Cada carteira tem saldo, gastos e cofrinhos próprios. Não pedimos CPF, CNPJ nem qualquer documento para isso: são apenas nomes que você escolhe.',
+      'Tudo que dá para fazer pelo WhatsApp dá para fazer pelo painel, e vice-versa. É o mesmo assistente, com duas maneiras de falar com ele.',
       'O serviço é oferecido gratuitamente, como projeto pessoal. Não há mensalidade, não há plano pago, e não há publicidade.',
       'O Guará não é uma instituição financeira. Ele não movimenta dinheiro, não faz transferência, não emite boleto, não tem conta, não guarda saldo real e não se conecta ao seu banco. Ele apenas anota o que você conta.',
     ],
@@ -45,6 +48,7 @@ const SECOES: Secao[] = [
       'O Guará organiza informação que VOCÊ forneceu. Ele não presta consultoria financeira, não recomenda investimento, não indica produto bancário, não avalia crédito e não sugere o que você deve fazer com seu dinheiro. Nada do que ele mostra deve ser entendido como recomendação.',
       'As decisões sobre a sua vida financeira são suas, e a responsabilidade por elas também. Se você olhar um saldo no Guará e decidir gastar, investir, emprestar, quitar ou deixar de pagar algo, essa decisão é sua.',
       'Os números que o Guará mostra dependem inteiramente do que foi registrado. Se você esqueceu de anotar um gasto, digitou um valor errado, ou a inteligência artificial classificou uma frase de forma diferente da que você quis dizer, o resultado estará errado — e o app não tem como saber disso.',
+      'Isso vale em dobro para áudio e foto. Transcrição entende palavra errada, e leitura de comprovante confunde número. O Guará mostra o que entendeu justamente para você conferir antes de seguir; se passar batido, o lançamento errado fica. Confira o valor sempre que mandar áudio ou imagem.',
       'Por isso: confira seus dados. O Guará é um caderno inteligente, não uma fonte de verdade sobre sua vida financeira. O extrato do seu banco é.',
       'Não nos responsabilizamos por prejuízo financeiro decorrente de decisão tomada com base em informação registrada no Guará, incluindo erro de digitação, classificação automática incorreta, lançamento esquecido ou dado desatualizado.',
     ],
@@ -56,7 +60,7 @@ const SECOES: Secao[] = [
       'Ele depende de serviços de terceiros que não controlamos:',
       [
         'WhatsApp e a plataforma da Meta — se ela ficar fora do ar, mudar regras ou suspender o número, o Guará para de receber e enviar mensagens.',
-        'A inteligência artificial do Google — se ficar indisponível ou sobrecarregada, mensagens podem não ser interpretadas naquele momento.',
+        'A inteligência artificial do Google — se ficar indisponível, sobrecarregada ou atingir o limite diário gratuito, frases mais complexas, áudios e fotos podem não ser interpretados naquele momento. Nesses períodos o Guará continua anotando gastos escritos de forma simples ("paguei 30 no mercado") por um caminho que não depende de IA, e avisa quando está assim.',
         'A infraestrutura de nuvem (Supabase e Oracle Cloud) — usada em plano gratuito, sujeita a limites e a interrupção.',
       ],
       'Fazemos o razoável para manter tudo de pé: há monitoramento automático, cópia de segurança diária e verificação de código antes de cada publicação. Mas não prometemos disponibilidade contínua, e não há prazo garantido de restabelecimento.',
@@ -73,6 +77,7 @@ const SECOES: Secao[] = [
         'Automatizar o envio de mensagens em volume, ou usar o serviço de forma que prejudique seu funcionamento para os demais.',
         'Fazer engenharia reversa da infraestrutura, ou tentar extrair credenciais e chaves de acesso.',
         'Se passar por outra pessoa, ou registrar número de telefone que não seja seu.',
+        'Enviar áudio ou imagem com dado sensível seu ou de terceiros — documento, cartão completo, informação de saúde. O conteúdo do arquivo passa pela inteligência artificial do Google, como explicado na Política de Privacidade. Para anotar um gasto, o valor basta.',
       ],
       'Se identificarmos uso nesses termos, podemos suspender ou encerrar a conta, com aviso quando for possível e sem aviso quando houver risco a terceiros ou ao serviço.',
       'Encontrou uma falha de segurança? Escreva para nós antes de divulgá-la. Agradecemos de verdade — é assim que o serviço fica melhor para todo mundo.',
@@ -124,7 +129,7 @@ export default function Termos() {
   return (
     <DocumentoLegal
       titulo="Termos de Uso"
-      atualizado="27 de agosto de 2026"
+      atualizado="28 de agosto de 2026"
       resumo="As regras do jogo: o que o Guará faz, o que ele não faz, e o que se espera de cada lado."
       secoes={SECOES}
       outroDocumento={{ href: '/privacidade', rotulo: 'Ler a Política de Privacidade' }}

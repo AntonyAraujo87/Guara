@@ -45,10 +45,18 @@ const SECOES: Secao[] = [
         'Dívidas e combinados, incluindo o nome que você citar da outra pessoa.',
         'Parcelamentos, dinheiro guardado, cofrinhos e metas que você definir.',
         'Categorias personalizadas que você criar.',
+        'Nomes das carteiras, se você separar o dinheiro em mais de uma (por exemplo, pessoal e trabalho). São nomes escolhidos por você — não pedimos CPF, CNPJ nem qualquer documento para isso.',
+      ],
+      'Áudio e foto, apenas de passagem:',
+      [
+        'Se você mandar um áudio, ele é transcrito e o texto vira o lançamento. O arquivo de áudio NÃO é guardado.',
+        'Se mandar a foto de um comprovante, nota ou print de transferência, o valor e o estabelecimento são lidos dela. A imagem NÃO é guardada.',
+        'Nos dois casos o arquivo existe apenas na memória do servidor durante os segundos do processamento, e é descartado em seguida. Não vai para banco de dados nem para cópia de segurança.',
+        'Vídeo, documento, figurinha e localização continuam sem ser processados: o Guará avisa que não lê aquele formato e descarta.',
       ],
       'Códigos temporários: ao vincular seu telefone à conta, geramos um código de 6 dígitos válido por 10 minutos. Ele é apagado assim que usado.',
       'Não coletamos sua localização, sua lista de contatos, dados do aparelho para rastreamento, nem dados bancários. O Guará nunca pede senha de banco, número de cartão, chave PIX ou acesso a qualquer conta financeira — e nunca vai pedir. Se algo se passando pelo Guará pedir isso, é golpe.',
-      'Áudios, fotos, vídeos e arquivos não são processados nem armazenados. Se você enviar, o Guará responde que ainda não consegue ler aquele formato, e o conteúdo é descartado.',
+      'Uma consequência prática de ler áudio e foto: o que estiver no arquivo passa pela inteligência artificial. Uma foto de comprovante costuma mostrar seu nome, e às vezes os quatro últimos dígitos do cartão. Isso é lido junto, embora só o valor e o estabelecimento sejam guardados. Se preferir não correr esse risco, digite o valor — o resultado é o mesmo.',
     ],
   },
   {
@@ -70,8 +78,11 @@ const SECOES: Secao[] = [
       'Esta é a parte que merece a explicação mais franca, porque é a que mais gera dúvida.',
       'Quando você manda uma mensagem, o texto é enviado ao Gemini, modelo de inteligência artificial do Google. A função dele é uma só: ler a frase e devolver o que ela significa em campos estruturados — que valor, que tipo, que categoria, que descrição.',
       'O Gemini não calcula seu saldo, não decide nada e não guarda seu histórico. Todo cálculo — saldo, totais, gráficos, comparações entre meses — é feito pelo nosso próprio sistema, a partir do banco de dados. Essa separação é deliberada: modelo de linguagem erra número com confiança, e num app de dinheiro isso seria inaceitável.',
-      'O que é enviado ao Google: apenas o texto daquela mensagem, limitado a 1.000 caracteres, e a lista de nomes das categorias que você criou. Não enviamos seu telefone, seu e-mail, seu nome nem seu histórico de lançamentos.',
-      'Segundo os termos da API do Google Gemini vigentes nesta data, o conteúdo enviado por meio da API não é usado para treinar os modelos. Não temos controle sobre eventual mudança dessa política pelo Google; se ela mudar de forma relevante, atualizamos este documento e avisamos.',
+      'Se você mandar áudio, ele é transcrito pelo mesmo Gemini. Se mandar foto de comprovante, o valor e o estabelecimento são lidos dela. Nos dois casos a mídia vai ao Google só para virar texto, e o texto segue o caminho de uma mensagem escrita. O arquivo não é guardado por nós em lugar nenhum — nem em banco, nem em backup.',
+      'O que é enviado ao Google: o texto daquela mensagem (limitado a 1.000 caracteres) ou o arquivo de áudio/imagem daquele envio; a lista de nomes das suas categorias e das suas carteiras, para que ele saiba reconhecê-las; e a data de hoje, para entender expressões como "ontem" ou "na terça". Não enviamos seu telefone, seu e-mail, seu nome nem seu histórico de lançamentos.',
+      'IMPORTANTE, E PRECISA SER DITO SEM MAQUIAGEM: usamos o plano gratuito da API do Google. Nos termos do Google, o conteúdo enviado pelos serviços NÃO PAGOS pode ser usado por ele para melhorar seus produtos, o que inclui revisão humana por parte do Google. A garantia de não uso para treinamento vale para os planos pagos, que não é o nosso caso. Enquanto o Guará for gratuito, é assim.',
+      'A consequência prática: não mande ao Guará informação que você não queira que passe pelo Google. Senha, número completo de cartão, documento, dado de saúde. Para registrar um gasto, um valor e uma palavra bastam — e é por isso que o Guará nunca pede nada além disso.',
+      'Se essa política do Google mudar de forma relevante, atualizamos este documento e avisamos pelo WhatsApp.',
       'Nenhuma pessoa lê suas mensagens. O processamento é inteiramente automatizado, e nem o desenvolvedor acessa o conteúdo dos seus lançamentos no dia a dia — salvo quando estritamente necessário para investigar uma falha que você tenha relatado.',
       'Você tem direito a solicitar revisão de classificação automatizada que considerar incorreta (art. 20 da LGPD). Na prática isso é mais simples do que parece: você corrige ou apaga qualquer lançamento direto no painel ou pelo chat, sem precisar pedir a ninguém.',
     ],
@@ -83,7 +94,7 @@ const SECOES: Secao[] = [
       'Por outro lado, o Guará é feito de serviços de terceiros, e é justo você saber exatamente quais tocam nos seus dados e para quê:',
       [
         'Meta Platforms (WhatsApp Cloud API) — entrega e recebe as mensagens. Vê o conteúdo do que trafega pelo WhatsApp, como em qualquer conversa na plataforma.',
-        'Google (Gemini) — recebe o texto da mensagem para extrair os dados, conforme a seção 5.',
+        'Google (Gemini) — recebe o texto da mensagem, ou o áudio/foto que você enviar, para extrair os dados. No plano gratuito que usamos, o Google pode usar esse conteúdo para melhorar os produtos dele. Detalhes na seção 5.',
         'Supabase — hospeda o banco de dados, cuida do login e guarda as cópias de segurança.',
         'Oracle Cloud — fornece o servidor onde o Guará roda.',
         'Cloudflare (Turnstile) — verifica que quem cria conta é uma pessoa, e não um robô. Não recebe seus dados financeiros.',
@@ -106,6 +117,7 @@ const SECOES: Secao[] = [
     paragrafos: [
       'Seus lançamentos ficam guardados enquanto sua conta existir. O histórico é o próprio produto: um controle financeiro que apaga o passado não serve para nada.',
       'Fazemos uma cópia de segurança por dia, mantida por 14 dias. Isso significa que, depois de você apagar um lançamento ou encerrar a conta, os dados ainda podem existir nessas cópias por até duas semanas antes de desaparecerem definitivamente. Preferimos dizer isso a fingir que a exclusão é instantânea em todos os lugares.',
+      'Áudios e fotos: não são guardados em momento nenhum. Existem só na memória do servidor durante os segundos do processamento, e não entram na cópia de segurança. O que fica é o lançamento que saiu deles.',
       'Códigos de verificação são apagados assim que usados, ou expiram sozinhos em 10 minutos.',
       'Registros técnicos de erro duram pouco — o suficiente para investigar falhas — e não contêm o conteúdo das suas mensagens.',
     ],
@@ -158,7 +170,7 @@ export default function Privacidade() {
   return (
     <DocumentoLegal
       titulo="Privacidade"
-      atualizado="27 de agosto de 2026"
+      atualizado="28 de agosto de 2026"
       resumo="O que guardamos, por quê, com quem dividimos e o que você pode exigir. Sem juridiquês."
       secoes={SECOES}
       outroDocumento={{ href: '/termos', rotulo: 'Ler os Termos de Uso' }}
