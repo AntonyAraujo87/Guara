@@ -1097,10 +1097,6 @@ async function apagarCategoria(phone, nome) {
 // Nenhum CPF nem CNPJ é pedido: seria dado sensível sem função. São dois
 // nomes, e só.
 
-// As tabelas onde a carteira vive. Renomear precisa passar em todas — deixar
-// uma de fora esconderia dinheiro num nome que não existe mais.
-const TABELAS_COM_CARTEIRA = ['transactions', 'debts', 'installments', 'savings', 'recurring', 'goals'];
-
 // Dez porque o seletor do painel é uma fila de botões: além disso ele quebra
 // em várias linhas e escolher vira caçada. Não é limite técnico — é o ponto
 // onde a tela para de ajudar.
@@ -1160,13 +1156,6 @@ function resolverCarteira(phone, dito, carteiras, ativa) {
     || null;
 }
 
-function nomeDeCarteira(bruto) {
-  const limpo = String(bruto || '').trim().slice(0, 24);
-  // "cria uma conta da empresa" chega como "empresa", e esse nome vira botão no
-  // painel e negrito nas mensagens. Minúsculo ali parece descuido.
-  return limpo ? limpo[0].toUpperCase() + limpo.slice(1) : '';
-}
-
 // Qual carteira está valendo agora, e quais existem. Uma consulta só: as duas
 // respostas vêm da mesma linha, e o bot precisa das duas em toda mensagem.
 async function contextoDeCarteira(phone) {
@@ -1183,101 +1172,56 @@ async function contextoDeCarteira(phone) {
   return { ativa: lista.includes(ativa) ? ativa : lista[0], carteiras: lista };
 }
 
-async function criarCarteira(phone, nome) {
-  const limpo = nomeDeCarteira(nome);
-  if (!limpo) return { erro: 'sem_nome' };
+// As três operações abaixo vivem no Postgres, não aqui. Foram movidas numa
+// auditoria, por dois motivos:
+//
+//   1. Renomear mexe em SEIS tabelas mais a lista de carteiras. Feito daqui,
+//      eram sete idas ao banco: falhando na quarta, metade do dinheiro ficava
+//      com o nome novo e a lista com o antigo — e o que foi renomeado sumia da
+//      tela, num nome de carteira que não existia mais em lugar nenhum.
+//
+//   2. Criar e apagar liam a lista, mexiam e gravavam de volta. O painel e o
+//      WhatsApp ao mesmo tempo faziam um sobrescrever o outro em silêncio.
+//
+// Dentro do banco, cada função roda numa transação (tudo ou nada) e o
+// `for update` segura a linha do usuário, transformando corrida em fila.
+//
+// O JavaScript continua dono das MENSAGENS: as funções devolvem um código de
+// erro seco ('ja_existe', 'demais'), e quem transforma isso em frase é o
+// index.js — do mesmo jeito para o WhatsApp e para o painel.
 
-  const { carteiras } = await contextoDeCarteira(phone);
-  const jaTem = carteiras.find((c) => c.toLowerCase() === limpo.toLowerCase());
-  if (jaTem) return { erro: 'ja_existe', nome: jaTem };
-  if (carteiras.length >= LIMITE_CARTEIRAS) return { erro: 'demais', carteiras };
-
-  const lista = [...carteiras, limpo];
-  // Criar NÃO troca de contexto. Quem cria uma carteira nova costuma estar
-  // arrumando a casa, não mudando de assunto — e ser jogado pra outra carteira
-  // sem pedir faz o próximo lançamento cair no lugar errado em silêncio.
-  const { error } = await supabaseAdmin
-    .from('users').update({ wallets: lista }).eq('phone', phone);
+async function chamarCarteira(nomeDaFuncao, args) {
+  const { data, error } = await supabaseAdmin.rpc(nomeDaFuncao, args);
   if (error) throw error;
-
-  lembrarCarteira(phone, limpo);
-  return { nome: limpo, carteiras: lista };
+  return data || {};
 }
 
-async function trocarCarteira(phone, nome) {
-  const { carteiras, ativa } = await contextoDeCarteira(phone);
-  const limpo = nomeDeCarteira(nome);
-  const alvo = carteiras.find((c) => c.toLowerCase() === limpo.toLowerCase())
-    || carteiras.find((c) => parecido(c, limpo));
-  if (!alvo) return { erro: 'nao_achei', carteiras };
-  if (alvo === ativa) return { jaEstava: true, nome: alvo, carteiras };
-
-  const { error } = await supabaseAdmin
-    .from('users').update({ active_wallet: alvo }).eq('phone', phone);
-  if (error) throw error;
-  lembrarCarteira(phone, alvo);
-  return { nome: alvo, carteiras };
+async function criarCarteira(phone, nome) {
+  const r = await chamarCarteira('guara_criar_carteira', {
+    p_phone: phone,
+    p_nome: String(nome || ''),
+    p_limite: LIMITE_CARTEIRAS,
+  });
+  if (!r.erro) lembrarCarteira(phone, r.nome);
+  return r;
 }
 
 async function renomearCarteira(phone, de, para) {
-  const novo = nomeDeCarteira(para);
-  if (!novo) return { erro: 'sem_nome' };
-
-  const { carteiras, ativa } = await contextoDeCarteira(phone);
-  const alvo = carteiras.find((c) => parecido(c, de));
-  if (!alvo) return { erro: 'nao_achei', carteiras };
-  if (carteiras.some((c) => c !== alvo && c.toLowerCase() === novo.toLowerCase())) {
-    return { erro: 'ja_existe', nome: novo };
-  }
-
-  // Todas as tabelas antes da lista: se algo falhar no meio, o nome antigo
-  // continua na lista e o dinheiro continua achável.
-  for (const tabela of TABELAS_COM_CARTEIRA) {
-    const { error } = await supabaseAdmin
-      .from(tabela).update({ wallet: novo }).eq('user_phone', phone).eq('wallet', alvo);
-    if (error) throw error;
-  }
-
-  const lista = carteiras.map((c) => (c === alvo ? novo : c));
-  const { error } = await supabaseAdmin
-    .from('users')
-    .update({ wallets: lista, active_wallet: ativa === alvo ? novo : ativa })
-    .eq('phone', phone);
-  if (error) throw error;
-  lembrarCarteira(phone, novo);
-  return { de: alvo, para: novo, carteiras: lista };
+  const r = await chamarCarteira('guara_renomear_carteira', {
+    p_phone: phone,
+    p_de: String(de || ''),
+    p_para: String(para || ''),
+  });
+  if (!r.erro) lembrarCarteira(phone, r.para);
+  return r;
 }
 
-// Apagar carteira NÃO apaga dinheiro: o que estava nela volta pra padrão.
-// Sumir com lançamentos por causa de um nome seria a pior surpresa possível.
 async function apagarCarteira(phone, nome) {
-  const { carteiras, ativa } = await contextoDeCarteira(phone);
-  const alvo = carteiras.find((c) => parecido(c, nome));
-  if (!alvo) return { erro: 'nao_achei', carteiras };
-  if (alvo === CARTEIRA_PADRAO) return { erro: 'e_a_padrao' };
-  if (carteiras.length <= 1) return { erro: 'ultima' };
-
-  let movidos = 0;
-  for (const tabela of TABELAS_COM_CARTEIRA) {
-    const { data, error } = await supabaseAdmin
-      .from(tabela)
-      .update({ wallet: CARTEIRA_PADRAO })
-      .eq('user_phone', phone)
-      .eq('wallet', alvo)
-      // user_phone e não id: goals não tem id — a chave dela é composta
-      // (user_phone, wallet), e pedir id derrubava a exclusão inteira.
-      .select('user_phone');
-    if (error) throw error;
-    movidos += (data || []).length;
-  }
-
-  const lista = carteiras.filter((c) => c !== alvo);
-  const { error } = await supabaseAdmin
-    .from('users')
-    .update({ wallets: lista, active_wallet: ativa === alvo ? CARTEIRA_PADRAO : ativa })
-    .eq('phone', phone);
-  if (error) throw error;
-  return { nome: alvo, movidos, carteiras: lista };
+  return chamarCarteira('guara_apagar_carteira', {
+    p_phone: phone,
+    p_nome: String(nome || ''),
+    p_padrao: CARTEIRA_PADRAO,
+  });
 }
 
 // Move o último lançamento pra outra carteira. É a correção de "caiu no lugar
