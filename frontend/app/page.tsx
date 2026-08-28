@@ -14,7 +14,7 @@ import {
 import {
   TrendingUp, TrendingDown, Wallet, LogOut, Search, Trash2, Inbox, Check, HandCoins,
   CalendarDays, PiggyBank, ChevronLeft, ChevronRight, CreditCard, Target,
-  Settings, Pencil, Download, Tags, X, Repeat,
+  Settings, Pencil, Plus, Download, Tags, X, Repeat,
 } from 'lucide-react';
 
 type Transaction = {
@@ -332,6 +332,23 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-dependency-change, the sanctioned data-fetching pattern
     fetchTransactions(ano, mes);
   }, [phone, monthOffset, fetchTransactions]);
+
+  // Criar, renomear e apagar carteira chamam o backend, que chama as MESMAS
+  // funções do WhatsApp. As regras (limite, nome repetido, não apagar a
+  // padrão) ficam num lugar só em vez de serem reescritas aqui.
+  async function mexerNaCarteira(acao: string, nome: string, novoNome?: string) {
+    const { ok, json } = await authedFetch('/api/carteiras', { acao, nome, novoNome });
+    if (!ok) {
+      setAvisoErro(json.error || 'Não consegui fazer isso.');
+      return false;
+    }
+    setCarteiras(json.carteiras);
+    // Renomear a carteira em que se está muda o nome dela por baixo; sem isto
+    // o painel ficaria apontando pra um nome que não existe mais.
+    setCarteira((atual) => (json.carteiras.includes(atual) ? atual : json.ativa));
+    if (acao === 'criar' && novoNome !== 'nao-entrar') setCarteira(json.ativa);
+    return true;
+  }
 
   // Manda a frase pro mesmo cérebro que atende o WhatsApp. É o que dá ao
   // painel as MESMAS capacidades do chat sem reescrever nenhuma delas — e sem
@@ -864,7 +881,7 @@ export default function Home() {
                 aria-pressed={c === carteira}
                 className={`rotulo text-sm px-4 py-2 rounded-full border-2 transition ${
                   c === carteira
-                    ? 'bg-[var(--ferrugem)] border-[var(--ferrugem)] text-[var(--sobre-ferrugem)]'
+                    ? 'bg-[var(--ferrugem)] border-[var(--ferrugem)] text-[var(--sobre-cor)]'
                     : 'border-[var(--borda-forte)] text-[var(--tinta-media)] hover:bg-[var(--areia)]'
                 }`}
               >
@@ -896,6 +913,9 @@ export default function Home() {
 
         {aba === 'ajustes' ? (
           <AbaAjustes
+            carteiras={carteiras}
+            carteiraAtiva={carteira}
+            onCarteira={mexerNaCarteira}
             categorias={categories}
             onAdicionar={handleAddCategory}
             onApagar={handleDeleteCategory}
@@ -1699,9 +1719,156 @@ function ModalEditar({
   );
 }
 
-function AbaAjustes({
-  categorias, onAdicionar, onApagar,
+// Carteiras separam o dinheiro de casa do dinheiro do trabalho. Ficam aqui,
+// junto das categorias, porque são a mesma natureza de coisa: organização que
+// a pessoa monta uma vez e usa por meses.
+function GerenciarCarteiras({
+  carteiras, ativa, onCarteira,
 }: {
+  carteiras: string[];
+  ativa: string;
+  onCarteira: (acao: string, nome: string, novoNome?: string) => Promise<boolean>;
+}) {
+  const [nova, setNova] = useState('');
+  const [editando, setEditando] = useState<string | null>(null);
+  const [rascunho, setRascunho] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+
+  async function criar(e: React.FormEvent) {
+    e.preventDefault();
+    const limpo = nova.trim();
+    if (!limpo || ocupado) return;
+    setOcupado(true);
+    if (await onCarteira('criar', limpo)) setNova('');
+    setOcupado(false);
+  }
+
+  async function salvarNome(antigo: string) {
+    const limpo = rascunho.trim();
+    if (!limpo || limpo === antigo) return setEditando(null);
+    setOcupado(true);
+    await onCarteira('renomear', antigo, limpo);
+    setOcupado(false);
+    setEditando(null);
+  }
+
+  async function apagar(nome: string) {
+    if (!confirm(`Apagar a carteira "${nome}"?\n\nOs lançamentos dela voltam pra ${CARTEIRA_PADRAO} — nada é perdido.`)) return;
+    setOcupado(true);
+    await onCarteira('apagar', nome);
+    setOcupado(false);
+  }
+
+  return (
+    <div className="bg-[var(--creme)] rounded-2xl border-2 border-[var(--borda)] p-6 mb-6">
+      <div className="flex items-start gap-2.5 mb-2">
+        <Wallet size={24} className="text-[var(--ferrugem)] shrink-0 mt-1" />
+        <h2 className="titulo text-2xl text-[var(--tinta)]">Suas carteiras</h2>
+      </div>
+      <p className="text-base text-[var(--tinta-media)] mb-6 leading-relaxed">
+        Cada carteira tem saldo, gastos, parcelas e cofrinhos próprios — bom pra separar
+        o dinheiro de casa do dinheiro do trabalho. Funciona igual pelo WhatsApp:
+        <em> &quot;cria uma carteira da empresa&quot;</em>.
+      </p>
+
+      <form onSubmit={criar} className="flex flex-wrap sm:flex-nowrap gap-2 mb-6">
+        <label htmlFor="nova-carteira" className="sr-only">Nome da carteira nova</label>
+        <input
+          id="nova-carteira"
+          value={nova}
+          onChange={(e) => setNova(e.target.value)}
+          placeholder="Nome da carteira nova"
+          maxLength={24}
+          className="flex-1 min-w-0 bg-transparent border-2 border-[var(--borda)] rounded-xl px-4 py-3 text-[var(--tinta)] placeholder:text-[var(--tinta-media)] focus:border-[var(--ferrugem)] focus:outline-none transition"
+        />
+        <button
+          type="submit"
+          disabled={ocupado || !nova.trim()}
+          className="rotulo flex items-center gap-2 px-5 py-3 rounded-xl bg-[var(--ferrugem)] text-[var(--sobre-cor)] disabled:opacity-50 transition"
+        >
+          <Plus size={17} /> Criar
+        </button>
+      </form>
+
+      <ul className="space-y-2">
+        {carteiras.map((c) => (
+          <li
+            key={c}
+            className="flex items-center gap-2 border-2 border-[var(--borda)] rounded-xl px-4 py-3"
+          >
+            {editando === c ? (
+              <>
+                <label htmlFor={`renomear-${c}`} className="sr-only">Novo nome</label>
+                <input
+                  id={`renomear-${c}`}
+                  value={rascunho}
+                  onChange={(e) => setRascunho(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') salvarNome(c);
+                    if (e.key === 'Escape') setEditando(null);
+                  }}
+                  maxLength={24}
+                  autoFocus
+                  className="flex-1 min-w-0 bg-transparent border-b-2 border-[var(--ferrugem)] text-[var(--tinta)] focus:outline-none"
+                />
+                <button
+                  onClick={() => salvarNome(c)}
+                  disabled={ocupado}
+                  className="rotulo text-sm px-3 py-1.5 rounded-lg bg-[var(--ferrugem)] text-[var(--sobre-cor)] disabled:opacity-50"
+                >
+                  Salvar
+                </button>
+                <button
+                  onClick={() => setEditando(null)}
+                  className="rotulo text-sm px-3 py-1.5 rounded-lg text-[var(--tinta-media)]"
+                >
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="flex-1 min-w-0 truncate text-[var(--tinta)]">
+                  {c}
+                  {c === ativa && (
+                    <span className="rotulo text-xs text-[var(--ferrugem)] ml-2">em uso</span>
+                  )}
+                </span>
+                <button
+                  onClick={() => { setEditando(c); setRascunho(c); }}
+                  aria-label={`Renomear ${c}`}
+                  className="p-2 rounded-lg text-[var(--tinta-media)] hover:bg-[var(--areia)] transition"
+                >
+                  <Pencil size={17} />
+                </button>
+                {c !== CARTEIRA_PADRAO && carteiras.length > 1 && (
+                  <button
+                    onClick={() => apagar(c)}
+                    aria-label={`Apagar ${c}`}
+                    disabled={ocupado}
+                    className="p-2 rounded-lg text-[var(--tinta-media)] hover:text-[var(--carmim)] hover:bg-[var(--areia)] transition disabled:opacity-50"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                )}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="text-sm text-[var(--tinta-media)] mt-4">
+        A <strong>{CARTEIRA_PADRAO}</strong> não pode ser apagada — é onde tudo cai por padrão.
+        Apagar uma carteira devolve os lançamentos dela pra lá, sem perder nada.
+      </p>
+    </div>
+  );
+}
+
+function AbaAjustes({
+  carteiras, carteiraAtiva, onCarteira, categorias, onAdicionar, onApagar,
+}: {
+  carteiras: string[];
+  carteiraAtiva: string;
+  onCarteira: (acao: string, nome: string, novoNome?: string) => Promise<boolean>;
   categorias: Categoria[];
   onAdicionar: (nome: string, kind: 'despesa' | 'receita') => void;
   onApagar: (id: string) => void;
@@ -1716,6 +1883,8 @@ function AbaAjustes({
   }
 
   return (
+    <>
+    <GerenciarCarteiras carteiras={carteiras} ativa={carteiraAtiva} onCarteira={onCarteira} />
     <div className="bg-[var(--creme)] rounded-2xl border-2 border-[var(--borda)] p-6">
       <div className="flex items-start gap-2.5 mb-2">
         <Tags size={24} className="text-[var(--ferrugem)] shrink-0 mt-1" />
@@ -1802,6 +1971,7 @@ function AbaAjustes({
         );
       })}
     </div>
+    </>
   );
 }
 

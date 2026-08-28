@@ -37,6 +37,7 @@ const {
   comCarteira,
   contextoDeCarteira,
   criarCarteira,
+  LIMITE_CARTEIRAS,
   trocarCarteira,
   renomearCarteira,
   apagarCarteira,
@@ -1820,6 +1821,53 @@ async function enviarWhatsApp(to, body) {
 // Sem isto, cada coisa nova precisaria ser escrita duas vezes, e as duas
 // versões divergiriam na primeira pressa.
 const painelLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+// Carteiras pelo painel. Chama exatamente as mesmas funções que o WhatsApp
+// chama — criar, renomear, apagar e trocar moram num lugar só, então as regras
+// (limite, nome repetido, inicial maiúscula, não apagar a padrão) valem igual
+// nos dois lados sem serem escritas duas vezes.
+//
+// Podia passar por /api/mensagem, mas gastaria uma chamada de IA pra executar
+// algo que o botão já disse sem ambiguidade nenhuma.
+app.post('/api/carteiras', painelLimiter, async (req, res) => {
+  try {
+    const user = await getAuthedUser(req);
+    if (!user) return res.sendStatus(401);
+
+    const { data: perfil } = await supabaseAdmin
+      .from('profiles').select('phone').eq('id', user.id).maybeSingle();
+    if (!perfil?.phone) return res.status(400).json({ error: 'Vincule seu número primeiro.' });
+
+    const acao = String(req.body?.acao || '');
+    const nome = String(req.body?.nome || '').trim();
+    const novoNome = String(req.body?.novoNome || '').trim();
+
+    let r;
+    if (acao === 'criar') r = await criarCarteira(perfil.phone, nome);
+    else if (acao === 'renomear') r = await renomearCarteira(perfil.phone, nome, novoNome);
+    else if (acao === 'apagar') r = await apagarCarteira(perfil.phone, nome);
+    else if (acao === 'trocar') r = await trocarCarteira(perfil.phone, nome);
+    else return res.status(400).json({ error: 'Ação desconhecida.' });
+
+    // Os erros viram frase em português aqui, e não no painel, pra que a
+    // explicação seja a mesma que a pessoa ouviria no WhatsApp.
+    const EXPLICACAO = {
+      sem_nome: 'Dê um nome pra carteira.',
+      ja_existe: `Você já tem uma carteira chamada "${r.nome || novoNome || nome}".`,
+      demais: `Você já tem ${LIMITE_CARTEIRAS} carteiras, que é o máximo.`,
+      nao_achei: 'Não achei essa carteira.',
+      e_a_padrao: `A carteira "${CARTEIRA_PADRAO}" não pode ser apagada — é onde tudo cai por padrão.`,
+      ultima: 'Essa é sua única carteira.',
+    };
+    if (r.erro) return res.status(400).json({ error: EXPLICACAO[r.erro] || 'Não deu certo.' });
+
+    const { ativa, carteiras } = await contextoDeCarteira(perfil.phone);
+    res.json({ ok: true, ativa, carteiras, movidos: r.movidos ?? 0 });
+  } catch (err) {
+    console.error('Erro no /api/carteiras:', err.message);
+    res.status(500).json({ error: 'Não consegui fazer isso agora.' });
+  }
+});
 
 app.post('/api/mensagem', painelLimiter, async (req, res) => {
   try {

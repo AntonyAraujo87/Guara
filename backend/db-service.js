@@ -1101,7 +1101,10 @@ async function apagarCategoria(phone, nome) {
 // uma de fora esconderia dinheiro num nome que não existe mais.
 const TABELAS_COM_CARTEIRA = ['transactions', 'debts', 'installments', 'savings', 'recurring', 'goals'];
 
-const LIMITE_CARTEIRAS = 5;
+// Dez porque o seletor do painel é uma fila de botões: além disso ele quebra
+// em várias linhas e escolher vira caçada. Não é limite técnico — é o ponto
+// onde a tela para de ajudar.
+const LIMITE_CARTEIRAS = 10;
 
 function nomeDeCarteira(bruto) {
   const limpo = String(bruto || '').trim().slice(0, 24);
@@ -1274,6 +1277,7 @@ async function moverUltimoParaCarteira(phone, destino) {
 
 module.exports = {
   CARTEIRA_PADRAO,
+  LIMITE_CARTEIRAS,
   moverUltimoParaCarteira,
   comCarteira,
   carteiraAtual,
