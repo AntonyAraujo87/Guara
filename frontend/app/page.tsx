@@ -161,6 +161,9 @@ export default function Home() {
   // Carteira: separa o dinheiro de casa do dinheiro do trabalho. Quem só tem
   // uma nunca vê o seletor — a barra inteira some, em vez de mostrar uma opção
   // única que não faz nada.
+  const [respostasGuara, setRespostasGuara] = useState<string[]>([]);
+  const [enviandoGuara, setEnviandoGuara] = useState(false);
+
   const [carteiras, setCarteiras] = useState<string[]>([CARTEIRA_PADRAO]);
   const [carteira, setCarteira] = useState<string>(CARTEIRA_PADRAO);
 
@@ -329,6 +332,31 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-dependency-change, the sanctioned data-fetching pattern
     fetchTransactions(ano, mes);
   }, [phone, monthOffset, fetchTransactions]);
+
+  // Manda a frase pro mesmo cérebro que atende o WhatsApp. É o que dá ao
+  // painel as MESMAS capacidades do chat sem reescrever nenhuma delas — e sem
+  // que as duas versões comecem a divergir na primeira pressa.
+  async function falarComGuara(texto: string) {
+    setEnviandoGuara(true);
+    setRespostasGuara([]);
+    try {
+      const { ok, json } = await authedFetch('/api/mensagem', { texto });
+      setRespostasGuara(ok ? json.respostas || [] : [json.error || 'Não consegui processar agora.']);
+      if (ok) {
+        // O que ele fez pode ter mexido em qualquer tabela — recarrega tudo em
+        // vez de tentar adivinhar o quê.
+        const { ano, mes } = mesPorDeslocamento(monthOffset);
+        await Promise.all([
+          fetchCarteiras(), fetchTransactions(ano, mes), fetchDebts(), fetchInstallments(),
+          fetchSavings(), fetchGoal(), fetchCategories(), fetchRecurring(),
+        ]);
+      }
+    } catch {
+      setRespostasGuara(['Não consegui falar com o Guará agora. Tenta de novo.']);
+    } finally {
+      setEnviandoGuara(false);
+    }
+  }
 
   async function handleDelete(id: string) {
     if (!confirm('Apagar essa transação?')) return;
@@ -858,6 +886,13 @@ export default function Home() {
             Ajustes
           </BotaoAba>
         </div>
+
+        <FalarComGuara
+          onEnviar={falarComGuara}
+          enviando={enviandoGuara}
+          respostas={respostasGuara}
+          onLimpar={() => setRespostasGuara([])}
+        />
 
         {aba === 'ajustes' ? (
           <AbaAjustes
@@ -1997,6 +2032,20 @@ const LINK_PHONE_STORAGE_KEY = 'guara_link_phone_state';
 // Formato que a Meta manda no webhook pra números brasileiros: DDI(55) + DDD(2) + número(8), SEM o 9 extra do celular.
 const BR_PHONE_REGEX = /^55\d{10}$/;
 
+// POST autenticado no backend. Fica no escopo do módulo porque duas telas
+// diferentes precisam: a de vincular número e a caixa de conversa do painel.
+async function authedFetch(path: string, body: object) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, json };
+}
+
 function loadLinkPhoneState(): { step: 'phone' | 'code'; inputPhone: string } {
   if (typeof window === 'undefined') return { step: 'phone', inputPhone: '' };
   try {
@@ -2026,18 +2075,6 @@ function LinkPhoneCard({ onLinked }: { onLinked: (phone: string) => void }) {
     } else {
       sessionStorage.removeItem(LINK_PHONE_STORAGE_KEY);
     }
-  }
-
-  async function authedFetch(path: string, body: object) {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    const res = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json().catch(() => ({}));
-    return { ok: res.ok, json };
   }
 
   async function handleSendCode(e: React.FormEvent) {
@@ -2184,6 +2221,92 @@ function Carregando() {
       <div className="h-10 w-10 rounded-full border-4 border-[var(--borda)] border-t-[var(--ferrugem)] animate-spin" />
     </main>
   );
+}
+
+// A mesma conversa do WhatsApp, dentro do painel. Não é um atalho bonitinho:
+// é o que garante que as duas pontas façam exatamente as mesmas coisas, hoje e
+// depois de qualquer funcionalidade nova.
+function FalarComGuara({
+  onEnviar, enviando, respostas, onLimpar,
+}: {
+  onEnviar: (texto: string) => void;
+  enviando: boolean;
+  respostas: string[];
+  onLimpar: () => void;
+}) {
+  const [texto, setTexto] = useState('');
+
+  const EXEMPLOS = [
+    'paguei 30 no mercado',
+    'comprei uma TV em 6x de 200',
+    'guardei 100 na viagem',
+    'quanto gastei esse mês?',
+  ];
+  const [exemplo] = useState(() => EXEMPLOS[Math.floor(Math.random() * EXEMPLOS.length)]);
+
+  function enviar(e: React.FormEvent) {
+    e.preventDefault();
+    const limpo = texto.trim();
+    if (!limpo || enviando) return;
+    onEnviar(limpo);
+    setTexto('');
+  }
+
+  return (
+    <div className="bg-[var(--creme)] border-2 border-[var(--borda)] rounded-2xl p-4 mb-6">
+      <form onSubmit={enviar} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+        <label htmlFor="falar-guara" className="sr-only">
+          Escreva pro Guará
+        </label>
+        <input
+          id="falar-guara"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder={`Escreve do seu jeito — ex: "${exemplo}"`}
+          maxLength={1000}
+          disabled={enviando}
+          className="flex-1 min-w-0 bg-transparent border-2 border-[var(--borda)] rounded-xl px-4 py-3 text-[var(--tinta)] placeholder:text-[var(--tinta-media)] focus:border-[var(--ferrugem)] focus:outline-none transition disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={enviando || !texto.trim()}
+          className="rotulo flex items-center gap-2 px-5 py-3 rounded-xl bg-[var(--ferrugem)] text-[var(--sobre-cor)] disabled:opacity-50 transition"
+        >
+          {enviando ? 'Pensando…' : 'Enviar'}
+        </button>
+      </form>
+
+      {respostas.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {respostas.map((r, n) => (
+            <div
+              key={n}
+              className="bg-[var(--areia)] border-2 border-[var(--borda)] rounded-xl px-4 py-3 text-[var(--tinta)] whitespace-pre-wrap break-words"
+            >
+              {formatarWhats(r)}
+            </div>
+          ))}
+          <button
+            onClick={onLimpar}
+            className="rotulo text-xs text-[var(--tinta-media)] underline underline-offset-2"
+          >
+            Limpar
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// O Guará responde com a marcação do WhatsApp (*negrito*, _itálico_). Mostrar
+// os asteriscos crus no painel pareceria erro.
+function formatarWhats(texto: string) {
+  const pedacos = texto.split(/(\*[^*\n]+\*|_[^_\n]+_)/g);
+  return pedacos.map((pedaco, n) => {
+    if (/^\*[^*\n]+\*$/.test(pedaco)) return <strong key={n}>{pedaco.slice(1, -1)}</strong>;
+    if (/^_[^_\n]+_$/.test(pedaco)) return <em key={n}>{pedaco.slice(1, -1)}</em>;
+    return <span key={n}>{pedaco}</span>;
+  });
 }
 
 function BotaoAba({ ativo, onClick, icone, children }: { ativo: boolean; onClick: () => void; icone: React.ReactNode; children: React.ReactNode }) {

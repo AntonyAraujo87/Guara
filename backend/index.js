@@ -129,6 +129,12 @@ Funciona igual dos dois jeitos. 😉`;
 // dados que já estão na tela. Mandar por WhatsApp exigiria gerar o arquivo no
 // servidor e subir como mídia — e a pessoa ia receber um anexo que o WhatsApp
 // abre mal. O link resolve, e ainda deixa ela escolher o mês.
+const MSG_CONVERSA = `Tô por aqui! 🐺
+
+Manda o gasto quando quiser, do seu jeito — escrito, por áudio, ou foto do comprovante.
+
+Digite *ajuda* pra ver tudo que eu faço.`;
+
 const MSG_PLANILHA = `📗 *Sua planilha está no painel*
 
 Abre aqui e toca em *Baixar planilha*:
@@ -411,6 +417,13 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
     return;
   }
 
+  // Cumprimento, agradecimento, desabafo. Não é erro, e responder "não entendi"
+  // pra um "valeu" faz o Guará parecer burro.
+  if (intencao === 'conversa') {
+    await replyWhatsApp(phone, MSG_CONVERSA);
+    return;
+  }
+
   if (intencao === 'carteira') {
     await replyWhatsApp(phone, await responderCarteira(phone, items[0], carteiraAtiva));
     return;
@@ -565,32 +578,40 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
   // Os que têm valor seguem; os zerados ficam de fora em vez de virar R$ 0,00.
   items = items.filter((i) => !semValor.includes(i));
 
-  // "gastei 200 na empresa" lança lá sem trocar o contexto — a próxima
-  // mensagem volta pra carteira em que ela estava. Trocar por baixo dos panos
-  // faria o lançamento seguinte cair no lugar errado sem aviso nenhum.
-  const outraCarteira = items.map((i) => i.carteira).find(Boolean);
-  if (outraCarteira) {
-    const { carteiras } = await contextoDeCarteira(phone);
-    const alvo = carteiras.find((c) => c.toLowerCase() === outraCarteira.toLowerCase())
-      || carteiras.find((c) => c.toLowerCase().includes(outraCarteira.toLowerCase()));
-    if (alvo && alvo !== carteiraAtiva) {
-      await comCarteira(alvo, () => salvarEResponder(phone, items, alvo, carteiraAtiva));
-      return;
-    }
-  }
-
-  await salvarEResponder(phone, items, carteiraAtiva, carteiraAtiva);
+  await salvarEResponder(phone, items, carteiraAtiva);
 }
 
-async function salvarEResponder(phone, items, carteira, carteiraAtiva) {
+// Casa o nome que a pessoa falou com uma carteira que existe. "empresa",
+// "Empresa", "da empresa" e "PJ" precisam achar a mesma coisa.
+function acharCarteira(carteiras, dito) {
+  if (!dito) return null;
+  const alvo = dito.toLowerCase().trim();
+  return carteiras.find((c) => c.toLowerCase() === alvo)
+    || carteiras.find((c) => c.toLowerCase().includes(alvo) || alvo.includes(c.toLowerCase()))
+    || null;
+}
+
+async function salvarEResponder(phone, items, carteiraAtiva) {
+  // Cada item na SUA carteira. "Gastei 50 da empresa com lanche e 50 do pessoal
+  // com combustível" são dois destinos diferentes na mesma frase — usar a
+  // primeira carteira pros dois jogava o gasto de casa na conta da empresa.
+  const { carteiras } = await contextoDeCarteira(phone);
+  const destinos = items.map((i) => acharCarteira(carteiras, i.carteira) || carteiraAtiva);
+
   const saved = [];
-  for (const item of items) {
+  const ondeSalvou = [];
+  for (let n = 0; n < items.length; n++) {
+    const item = items[n];
+    const destino = destinos[n];
     try {
-      if (item.kind === 'parcelamento') await salvarParcelamento(phone, item);
-      else if (item.kind === 'guardado') await saveSaving(phone, item);
-      else if (item.kind === 'divida') await saveDebt(phone, item);
-      else await saveTransaction(phone, item);
+      await comCarteira(destino, async () => {
+        if (item.kind === 'parcelamento') await salvarParcelamento(phone, item);
+        else if (item.kind === 'guardado') await saveSaving(phone, item);
+        else if (item.kind === 'divida') await saveDebt(phone, item);
+        else await saveTransaction(phone, item);
+      });
       saved.push(item);
+      ondeSalvou.push(destino);
     } catch (err) {
       console.error('Erro ao salvar item:', err.message, JSON.stringify(item));
     }
@@ -600,21 +621,41 @@ async function salvarEResponder(phone, items, carteira, carteiraAtiva) {
     return;
   }
 
+  const foraDaAtiva = [...new Set(ondeSalvou.filter((c) => c !== carteiraAtiva))];
+
   // Guardar dinheiro merece resposta própria: mostra o cofrinho e o andamento da meta.
   if (saved.length === 1 && saved[0].kind === 'guardado') {
-    const onde = carteira !== carteiraAtiva ? `${NL}${NL}_(na carteira *${carteira}*)_` : '';
-    await replyWhatsApp(phone, (await confirmarGuardado(phone, saved[0])) + onde);
+    const onde = foraDaAtiva.length ? `${NL}${NL}_(na carteira *${foraDaAtiva[0]}*)_` : '';
+    const resposta = await comCarteira(ondeSalvou[0], () => confirmarGuardado(phone, saved[0]));
+    await replyWhatsApp(phone, resposta + onde);
   } else {
-    // Se caiu numa carteira diferente da que estava valendo, avisa. Sem isso a
-    // pessoa não teria como saber onde o dinheiro foi parar.
-    const ondeCaiu = carteira !== carteiraAtiva ? `${NL}_(na carteira *${carteira}*)_` : '';
-    await replyWhatsApp(
-      phone,
-      formatConfirmation(saved) + ondeCaiu + (await perguntaDeAssinatura(phone, saved))
-    );
+    // Sem isto a pessoa não teria como saber onde cada coisa foi parar. Com
+    // dois destinos, o rótulo vai item a item; com um só, uma linha no fim.
+    const varios = new Set(ondeSalvou).size > 1;
+    const corpo = varios
+      ? formatConfirmationPorCarteira(saved, ondeSalvou)
+      : formatConfirmation(saved) + (foraDaAtiva.length ? `${NL}_(na carteira *${foraDaAtiva[0]}*)_` : '');
+    await replyWhatsApp(phone, corpo + (await perguntaDeAssinatura(phone, saved)));
   }
 
   await convidarParaPainel(phone);
+}
+
+// Confirmação quando a mesma mensagem espalhou dinheiro por carteiras
+// diferentes: agrupa por destino, senão a pessoa não tem como conferir.
+function formatConfirmationPorCarteira(saved, ondeSalvou) {
+  const grupos = new Map();
+  saved.forEach((item, n) => {
+    const carteira = ondeSalvou[n];
+    if (!grupos.has(carteira)) grupos.set(carteira, []);
+    grupos.get(carteira).push(item);
+  });
+
+  const partes = [`✅ *${saved.length} registrados*, em ${grupos.size} carteiras:`];
+  for (const [carteira, itens] of grupos) {
+    partes.push('', `👛 *${carteira}*`, ...itens.map((i) => formatLine(i)));
+  }
+  return partes.join(NL);
 }
 
 // Convida pro cadastro só depois da pessoa registrar algo — e só duas vezes na vida,
@@ -1642,7 +1683,29 @@ function formatConfirmation(items) {
   return `✅ ${items.length} registrados:\n${linhas.join('\n')}\n\n${totais.join('\n')}`;
 }
 
+// Quando a mensagem chega pelo painel em vez do WhatsApp, as respostas são
+// recolhidas aqui e devolvidas na resposta HTTP. É o que faz o painel ter
+// exatamente as mesmas capacidades do chat sem reimplementar nenhuma delas:
+// uma lógica só, dois jeitos de falar com ela.
+const { AsyncLocalStorage } = require('async_hooks');
+const respostasDoPainel = new AsyncLocalStorage();
+
+async function coletandoRespostas(fn) {
+  const caixa = [];
+  await respostasDoPainel.run(caixa, fn);
+  return caixa;
+}
+
 async function replyWhatsApp(to, body) {
+  const caixa = respostasDoPainel.getStore();
+  if (caixa) {
+    caixa.push(body);
+    return;
+  }
+  return enviarWhatsApp(to, body);
+}
+
+async function enviarWhatsApp(to, body) {
   await axios.post(
     `https://graph.facebook.com/${META_API_VERSION || 'v21.0'}/${META_PHONE_NUMBER_ID}/messages`,
     {
@@ -1665,6 +1728,38 @@ async function replyWhatsApp(to, body) {
 }
 
 // Prova que o usuário logado é dono do número antes de vincular (envia um código de 6 dígitos via WhatsApp)
+// Tudo que dá pra fazer conversando, dá pra fazer pelo painel. Mesma IA, mesma
+// lógica, mesmas regras — o painel só troca o meio de entrada e de saída.
+//
+// Sem isto, cada coisa nova precisaria ser escrita duas vezes, e as duas
+// versões divergiriam na primeira pressa.
+const painelLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+app.post('/api/mensagem', painelLimiter, async (req, res) => {
+  try {
+    const user = await getAuthedUser(req);
+    if (!user) return res.sendStatus(401);
+
+    // O telefone vem do perfil, nunca do corpo do pedido: aceitar o número que
+    // o cliente mandar deixaria qualquer pessoa logada mexer na conta alheia.
+    const { data: perfil } = await supabaseAdmin
+      .from('profiles').select('phone').eq('id', user.id).maybeSingle();
+    if (!perfil?.phone) {
+      return res.status(400).json({ error: 'Vincule seu número antes de usar o assistente.' });
+    }
+
+    const texto = String(req.body?.texto || '').trim();
+    if (!texto) return res.status(400).json({ error: 'Escreva alguma coisa.' });
+    if (texto.length > 1000) return res.status(400).json({ error: 'Mensagem longa demais.' });
+
+    const respostas = await coletandoRespostas(() => processIncomingMessage(perfil.phone, texto));
+    res.json({ respostas });
+  } catch (err) {
+    console.error('Erro no /api/mensagem:', err.message);
+    res.status(500).json({ error: 'Não consegui processar agora. Tenta de novo.' });
+  }
+});
+
 app.post('/api/phone/request-code', authLimiter, async (req, res) => {
   try {
     const user = await getAuthedUser(req);
@@ -1689,7 +1784,20 @@ app.post('/api/phone/request-code', authLimiter, async (req, res) => {
       .upsert({ user_id: user.id, phone, code, attempts: 0, expires_at: expiresAt });
     if (error) throw error;
 
-    await replyWhatsApp(phone, `Seu código de verificação do Guará: ${code}\nVálido por 10 minutos. Não compartilhe com ninguém.`);
+    // O código sai sozinho numa linha, em bloco monoespaçado. Não é o botão de
+    // copiar do WhatsApp — esse só existe em template de autenticação, que é
+    // categoria PAGA. Assim ao menos dá pra tocar e segurar em cima do bloco e
+    // copiar só o número, sem levar o texto junto.
+    await replyWhatsApp(phone, [
+      '🔐 *Seu código do Guará*',
+      '',
+      '```',
+      code,
+      '```',
+      '',
+      '_Toque e segure no número acima pra copiar._',
+      'Vale por 10 minutos. Não compartilhe com ninguém.',
+    ].join(NL));
     res.json({ success: true });
   } catch (err) {
     console.error('Erro ao enviar código de verificação:', err.message);

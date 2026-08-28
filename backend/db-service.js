@@ -871,7 +871,9 @@ async function acharPorDescricao(phone, tabela, texto, campos, carteira = cartei
     .limit(200);
 
   const linhas = data || [];
-  if (!String(texto || '').trim()) return linhas;
+  // Sem texto, ou com um texto que só aponta ("esse aí"), o alvo é o mais
+  // recente — que é justamente o que a pessoa quis dizer.
+  if (!String(texto || '').trim() || ehReferencia(texto)) return linhas;
 
   return linhas.filter((linha) =>
     [linha.description, linha.person, linha.category, linha.jar]
@@ -879,10 +881,21 @@ async function acharPorDescricao(phone, tabela, texto, campos, carteira = cartei
   );
 }
 
+// Palavras que apontam pro último lançamento em vez de nomeá-lo. O prompt já
+// manda a IA devolver descrição vazia nesses casos, mas ela às vezes copia o
+// "esse aí" mesmo assim — e aí a busca por nome não acha nada e a pessoa leva
+// um "não achei" logo depois de ter registrado a coisa.
+const APONTA_PRO_ULTIMO = /^(esse|essa|isso|aquele|aquela|aquilo|esses|essas|o ultimo|a ultima|o de agora|o anterior|o de cima|ai|dai|esse ai|essa ai|esse dai|essa dai|essa compra|esse gasto|esse lancamento|essa despesa|o que acabei de mandar|de agora|agora|ultimo|ultima)/i;
+
+function ehReferencia(texto) {
+  const limpo = semAcento(String(texto || '').toLowerCase().trim());
+  return Boolean(limpo) && APONTA_PRO_ULTIMO.test(limpo);
+}
+
 // Vários candidatos com nomes diferentes = a frase não decidiu. Um só nome
 // repetido (três "Mercado") não é ambiguidade: é o mesmo alvo.
 function ambiguo(achados, descricao) {
-  if (!descricao || achados.length <= 1) return false;
+  if (!descricao || ehReferencia(descricao) || achados.length <= 1) return false;
   return new Set(achados.map((a) => semAcento(String(a.description || '').toLowerCase()))).size > 1;
 }
 

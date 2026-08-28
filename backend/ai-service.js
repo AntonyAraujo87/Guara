@@ -180,6 +180,118 @@ Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "d
 Regra de ouro: se a frase tem "me deve"/"me devendo"/"vão me pagar" (o dinheiro vem NA DIREÇÃO do usuário), é sempre a_receber. Se tem "eu devo"/"tenho que pagar"/"devendo" partindo do usuário em direção a outra pessoa, é a_pagar.
 Caso especial "eu me devo" / "devo pra mim mesmo": trate como "a_pagar" com person = "eu mesmo" (é um compromisso que o usuário assumiu consigo, ex: uma meta ou promessa).
 
+═══════════════════════════════════════════════════════════════════
+COMO AS PESSOAS FALAM DE VERDADE
+═══════════════════════════════════════════════════════════════════
+Vale para TODAS as intenções acima. Ninguém fala como manual de sistema.
+Os exemplos abaixo são AMOSTRAS, não listas fechadas: entenda pelo sentido,
+não por combinação exata de palavras.
+
+── 1. REFERÊNCIA: quando a pessoa aponta sem dar o nome ──
+É o caso mais comum e o mais fácil de errar.
+
+"esse", "essa", "isso", "esse aí", "essa aí", "esse daí", "essa compra",
+"esse gasto", "esse lançamento", "aquele", "aquilo", "o último", "o de agora",
+"o que acabei de mandar", "o de cima", "aí", "esse último", "o anterior"
+
+Tudo isso aponta para o ÚLTIMO lançamento. Quando aparecerem, deixe
+description como string VAZIA e preencha só o que mudou.
+
+NUNCA copie "esse aí" (ou qualquer um desses) para o campo description. Não
+existe lançamento chamado "esse aí": a busca falha e a pessoa recebe um "não
+achei" sem sentido, logo depois de ter registrado a coisa.
+
+  "esse aí era lanche"           -> editar_lancamento, description "", category "Alimentação"
+  "muda essa pra transporte"     -> editar_lancamento, description "", category "Transporte"
+  "na verdade foram 45"          -> editar_lancamento, description "", amount 45
+  "esse foi no cartão"           -> conversa (não muda nada que eu guardo)
+  "apaga esse"                   -> desfazer
+  "essa compra aí foi parcelada" -> converter_ultimo
+
+── 2. DINHEIRO: os nomes que o brasileiro dá ──
+pila, conto, contos, mango, mangos, prata, pratas, real, reais, pau, paus,
+grana, din, dindin, merreca, trocado, nota, mirreia, dinheiro
+  "35 pila" = 35   "50 conto" = 50   "2 mangos" = 2   "10 paus" = 10
+
+Escalas: k, mil, milhão/mi, bilhão/bi, trilhão/tri. "1.5k" = 1500.
+
+Por extenso (vem muito de áudio transcrito):
+  "trinta e cinco" = 35, "cento e vinte" = 120, "mil e duzentos" = 1200,
+  "dois e cinquenta" = 2,50, "quinze e noventa" = 15,90, "meio real" = 0,50
+  "uma nota de cem" = 100, "duas notas de cinquenta" = 100
+
+Formatos: 35 | 35,00 | 35.00 | R$35 | 35 R$ | 35reais | R$ 35,90 | 1.200,50 | 1200.50
+
+── 3. GASTAR ──
+paguei, gastei, torrei, mandei, saiu, foi, deu, custou, comprei, peguei, botei,
+meti, queimei, larguei, desembolsei, dei, fui de, abasteci, enchi o tanque,
+almocei, jantei, lanchei, tomei, comi, cortei o cabelo, fiz a unha, passei no
+mercado, dei uma passada, fui no, rolou, ficou em, saiu por, custou-me
+
+  "torrei 200 no shopping"      "saiu 80 o rango"       "deu 45 o uber"
+  "fui de 99 pop, 22"           "enchi o tanque, 250"   "rolou 60 de bar"
+  "cortei o cabelo 40"          "almocei 32"            "ficou em 89,90"
+
+── 4. RECEBER ──
+recebi, caiu, entrou, ganhei, me pagaram, pingou, veio, embolsei, faturei,
+levantei, caiu na conta, entrou na conta, caiu o salário, recebi o pix,
+me mandaram, chegou, creditou, bateu na conta
+
+  "caiu 3000"     "pingou 500 do freela"    "me pagaram os 200"
+  "entrou 1.200"  "bateu o salário"         "chegou a grana do bico"
+
+── 5. GUARDAR ──
+guardei, separei, juntei, poupei, reservei, deixei de lado, botei no cofre,
+botei na poupança, botei na reserva, economizei, fiz uma reserva, tirei de lado,
+segurei, deixei guardado, coloquei no cofrinho, pus de lado
+
+  "separei 300"   "botei 100 no cofre"   "deixei 50 de lado"   "juntei 200"
+
+── 6. TIRAR DO GUARDADO ──
+tirei, saquei, resgatei, usei do guardado, mexi na reserva, peguei do cofre,
+puxei do guardado, tive que usar, gastei da poupança
+
+── 7. DÍVIDA ──
+devo, tô devendo, fiquei devendo, peguei emprestado, emprestei, fiado, no fiado,
+me deve, tá me devendo, ficou de me pagar, prometeu, combinou de pagar,
+paguei por ele, cobri pra ela, banquei, adiantei pra
+
+── 8. GÍRIA DE CATEGORIA ──
+rango, bóia, larica, comida = Alimentação
+busão, bus, uber, 99, corrida, gasosa, gasolina, combustível = Transporte
+farmácia, remédio, consulta, dentista = Saúde
+balada, rolê, bar, cerveja, breja, cinema = Lazer
+mercado, feira, compras do mês = Mercado
+aluguel, condomínio, luz, água, net, internet = Casa/Contas
+
+── 9. COMO A ESCRITA CHEGA ──
+Erro de digitação ("mercao", "gasoina", "farmacia", "receb"), sem acento,
+sem pontuação, tudo minúsculo, TUDO MAIÚSCULO, abreviação de internet
+(vc, pq, tb, tbm, blz, vlw, qnd, msm, pfv, kk), letra repetida ("valeuuu"),
+áudio transcrito com pontuação estranha. Nada disso muda o sentido — leia
+como se estivesse escrito certo.
+
+── 10. A MENSAGEM VEM MISTURADA ──
+Cumprimento, agradecimento e desabafo vêm colados no dado. Extraia o dado e
+ignore o resto:
+  "bom dia! gastei 30 no mercado"        -> transacao 30
+  "cara, torrei 500 ontem, tô mal"       -> transacao 500
+  "vlw! ah, e paguei 40 de uber"         -> transacao 40
+
+── 11. QUANDO NÃO HÁ NADA FINANCEIRO ──
+{"kind": "conversa"} para cumprimento, agradecimento, elogio, xingamento,
+desabafo sem valor, ou resposta negativa a uma pergunta minha:
+  "oi", "bom dia", "valeu", "vlw", "obrigado", "kkkk", "top", "beleza",
+  "não", "nem", "só esse mês", "deixa quieto", "nada"
+Lista vazia [] só quando a mensagem não é nem conversa nem dado — praticamente
+nunca. Prefira "conversa" a devolver vazio.
+
+── 12. A REGRA QUE MANDA EM TODAS ──
+Se a pessoa escreveu para mim, ela quer alguma coisa. Encontre a intenção mais
+provável e devolva ela, mesmo com campos faltando — o sistema pergunta o que
+faltar. Devolver a intenção errada por excesso de zelo é pior do que devolver a
+provável com um campo vazio.
+
 Regras:
 - amount deve ser sempre positivo (número). Entenda QUALQUER abreviação de valor, com ou sem acento, maiúscula ou minúscula: "80k" = 80000, "80 mil" = 80000, "80 milhão"/"80 milhões"/"80 mi" = 80000000, "80 bilhão"/"80 bilhões"/"80 bi"/"80 bilhao" = 80000000000, "80 trilhão"/"80 tri"/"80 trilhao" = 80000000000000, "1.5k" = 1500.
 - Se a mensagem for só "+50" ou "+ 50", trate como transação receita de R$50, categoria "Outros". Se for só "-50" ou "- 50", trate como transação despesa de R$50, categoria "Outros".
@@ -270,6 +382,9 @@ async function extractItems(rawText, categoriasExtras = []) {
       return parsed.map((item) => {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
+        }
+        if (item.kind === 'conversa') {
+          return { kind: 'conversa' };
         }
         if (item.kind === 'carteira') {
           const ACOES = ['criar', 'trocar', 'listar', 'renomear', 'apagar'];
