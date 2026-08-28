@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { categoryColor } from '@/lib/chartColors';
@@ -14,7 +14,7 @@ import {
 import {
   TrendingUp, TrendingDown, Wallet, LogOut, Search, Trash2, Inbox, Check, HandCoins,
   CalendarDays, PiggyBank, ChevronLeft, ChevronRight, CreditCard, Target,
-  Settings, Pencil, Plus, Download, Tags, X, Repeat,
+  Settings, Pencil, Plus, Download, Tags, X, Repeat, MessageCircle, Send,
 } from 'lucide-react';
 
 type Transaction = {
@@ -215,7 +215,9 @@ export default function Home() {
     const { data } = await supabase.from('users').select('active_wallet, wallets').maybeSingle();
     const lista = Array.isArray(data?.wallets) && data.wallets.length ? data.wallets : [CARTEIRA_PADRAO];
     setCarteiras(lista);
-    setCarteira((atual) => (lista.includes(atual) ? atual : data?.active_wallet || lista[0]));
+    // Abre na mesma carteira em que a conversa do WhatsApp parou. Abrir noutra
+    // faria a tela discordar do chat logo de cara.
+    setCarteira(data?.active_wallet && lista.includes(data.active_wallet) ? data.active_wallet : lista[0]);
   }, []);
 
   async function fetchProfile(userId: string) {
@@ -332,6 +334,23 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-dependency-change, the sanctioned data-fetching pattern
     fetchTransactions(ano, mes);
   }, [phone, monthOffset, fetchTransactions]);
+
+  // Trocar de carteira no painel muda a carteira DE VERDADE, no banco — a mesma
+  // que o WhatsApp usa.
+  //
+  // Antes isso era só estado local: a tela mostrava Empresa e o WhatsApp
+  // continuava lançando na Pessoal. Quem trocava aqui e mandava mensagem via o
+  // gasto cair na outra carteira, sem entender por quê. Duas verdades sobre
+  // "onde eu estou" é uma a mais.
+  async function trocarDeCarteira(nome: string) {
+    setCarteira(nome);
+    const { ok, json } = await authedFetch('/api/carteiras', { acao: 'trocar', nome });
+    if (!ok) {
+      setAvisoErro(json.error || 'Não consegui trocar de carteira.');
+      return;
+    }
+    setCarteiras(json.carteiras);
+  }
 
   // Criar, renomear e apagar carteira chamam o backend, que chama as MESMAS
   // funções do WhatsApp. As regras (limite, nome repetido, não apagar a
@@ -880,7 +899,7 @@ export default function Home() {
             {carteiras.map((c) => (
               <button
                 key={c}
-                onClick={() => setCarteira(c)}
+                onClick={() => trocarDeCarteira(c)}
                 aria-pressed={c === carteira}
                 className={`rotulo text-sm px-4 py-2 rounded-full border-2 transition ${
                   c === carteira
@@ -912,6 +931,8 @@ export default function Home() {
           enviando={enviandoGuara}
           respostas={respostasGuara}
           onLimpar={() => setRespostasGuara([])}
+          carteira={carteira}
+          temVariasCarteiras={carteiras.length > 1}
         />
 
         {aba === 'ajustes' ? (
@@ -1277,6 +1298,19 @@ export default function Home() {
         <div className="bg-[var(--creme)] rounded-2xl border-2 border-[var(--borda)] p-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <h2 className="titulo text-2xl text-[var(--tinta)]">Seus lançamentos</h2>
+            {/* Leva pra caixa de cima em vez de abrir outro formulário: um jeito
+                só de anotar significa uma regra só, e é o mesmo jeito do
+                WhatsApp. O botão existe porque a caixa sozinha não se anunciava
+                — quem chegava aqui procurando "adicionar" não achava nada. */}
+            <button
+              onClick={() => {
+                document.getElementById('falar-guara')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                document.getElementById('falar-guara')?.focus();
+              }}
+              className="rotulo flex items-center gap-2 text-xs px-4 py-2.5 rounded-xl bg-[var(--ferrugem)] text-[var(--sobre-cor)] hover:opacity-90 transition"
+            >
+              <Plus size={16} /> Anotar
+            </button>
             {filtered.length > 0 && (
               <button
                 onClick={exportarPlanilha}
@@ -2399,23 +2433,43 @@ function Carregando() {
 // A mesma conversa do WhatsApp, dentro do painel. Não é um atalho bonitinho:
 // é o que garante que as duas pontas façam exatamente as mesmas coisas, hoje e
 // depois de qualquer funcionalidade nova.
+//
+// A primeira versão era só um campo com "Escreve do seu jeito" e um botão
+// Enviar. Quem já sabia pra que servia demorou a entender — o campo não dizia
+// o que fazia, nem que aquilo REGISTRAVA coisa. Agora tem título, uma linha
+// explicando, e atalhos que preenchem o campo com um começo de frase: em vez
+// de adivinhar o que pode escrever, a pessoa toca e completa.
+const ATALHOS = [
+  { rotulo: 'Gasto', modelo: 'paguei  no mercado', cursor: 7 },
+  { rotulo: 'Entrada', modelo: 'recebi ', cursor: 7 },
+  { rotulo: 'Guardar', modelo: 'guardei ', cursor: 8 },
+  { rotulo: 'Dívida', modelo: 'devo  pro ', cursor: 5 },
+  { rotulo: 'Parcelado', modelo: 'comprei  em 6x de ', cursor: 8 },
+  { rotulo: 'Perguntar', modelo: 'quanto gastei esse mês?', cursor: 23 },
+];
+
 function FalarComGuara({
-  onEnviar, enviando, respostas, onLimpar,
+  onEnviar, enviando, respostas, onLimpar, carteira, temVariasCarteiras,
 }: {
   onEnviar: (texto: string) => void;
   enviando: boolean;
   respostas: string[];
   onLimpar: () => void;
+  carteira: string;
+  temVariasCarteiras: boolean;
 }) {
   const [texto, setTexto] = useState('');
+  const campo = useRef<HTMLInputElement>(null);
 
-  const EXEMPLOS = [
-    'paguei 30 no mercado',
-    'comprei uma TV em 6x de 200',
-    'guardei 100 na viagem',
-    'quanto gastei esse mês?',
-  ];
-  const [exemplo] = useState(() => EXEMPLOS[Math.floor(Math.random() * EXEMPLOS.length)]);
+  function usarAtalho(modelo: string, cursor: number) {
+    setTexto(modelo);
+    // O cursor vai pro buraco onde falta o número, senão a pessoa precisa
+    // caçar o lugar certo com o dedo.
+    requestAnimationFrame(() => {
+      campo.current?.focus();
+      campo.current?.setSelectionRange(cursor, cursor);
+    });
+  }
 
   function enviar(e: React.FormEvent) {
     e.preventDefault();
@@ -2426,16 +2480,42 @@ function FalarComGuara({
   }
 
   return (
-    <div className="bg-[var(--creme)] border-2 border-[var(--borda)] rounded-2xl p-4 mb-6">
+    <div className="bg-[var(--creme)] border-2 border-[var(--borda)] rounded-2xl p-5 mb-6">
+      <div className="flex items-start gap-2.5 mb-1.5">
+        <MessageCircle size={22} className="text-[var(--ferrugem)] shrink-0 mt-0.5" />
+        <h2 className="titulo text-xl text-[var(--tinta)]">Anotar ou perguntar</h2>
+      </div>
+      <p className="text-sm text-[var(--tinta-media)] mb-4 leading-relaxed">
+        Escreva como você falaria no WhatsApp — é o mesmo Guará, e ele faz tudo por aqui
+        também.
+        {temVariasCarteiras && (
+          <> O que você anotar vai pra carteira <strong>{carteira}</strong>.</>
+        )}
+      </p>
+
+      <div className="flex flex-wrap gap-2 mb-3">
+        {ATALHOS.map((a) => (
+          <button
+            key={a.rotulo}
+            type="button"
+            onClick={() => usarAtalho(a.modelo, a.cursor)}
+            className="rotulo text-xs px-3 py-2 rounded-full border-2 border-[var(--borda)] text-[var(--tinta-media)] hover:border-[var(--ferrugem)] hover:text-[var(--ferrugem)] transition"
+          >
+            + {a.rotulo}
+          </button>
+        ))}
+      </div>
+
       <form onSubmit={enviar} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
         <label htmlFor="falar-guara" className="sr-only">
           Escreva pro Guará
         </label>
         <input
           id="falar-guara"
+          ref={campo}
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
-          placeholder={`Escreve do seu jeito — ex: "${exemplo}"`}
+          placeholder={'Ex: "paguei 30 no mercado"'}
           maxLength={1000}
           disabled={enviando}
           className="flex-1 min-w-0 bg-transparent border-2 border-[var(--borda)] rounded-xl px-4 py-3 text-[var(--tinta)] placeholder:text-[var(--tinta-media)] focus:border-[var(--ferrugem)] focus:outline-none transition disabled:opacity-60"
@@ -2445,7 +2525,7 @@ function FalarComGuara({
           disabled={enviando || !texto.trim()}
           className="rotulo flex items-center gap-2 px-5 py-3 rounded-xl bg-[var(--ferrugem)] text-[var(--sobre-cor)] disabled:opacity-50 transition"
         >
-          {enviando ? 'Pensando…' : 'Enviar'}
+          {enviando ? 'Pensando…' : <><Send size={16} /> Enviar</>}
         </button>
       </form>
 
