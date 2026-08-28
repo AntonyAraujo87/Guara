@@ -387,6 +387,34 @@ Regras:
 - Mas não invente itens: se a pessoa faz UMA pergunta só, devolva UM item de consulta. Não desmembre a mesma pergunta em várias.`;
 
 // Monta o trecho do prompt que ensina as categorias criadas pela própria pessoa.
+const DIAS_DA_SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira',
+  'quinta-feira', 'sexta-feira', 'sábado'];
+const MESES_POR_EXTENSO = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+// O prompt é um texto fixo e não sabe que dia é hoje. Sem isso, "no domingo",
+// "sexta passada" e "dia 15" viravam chute — e chute em data entra no mês
+// errado sem ninguém perceber.
+//
+// Fica em bloco separado, e não dentro do SYSTEM_PROMPT, porque muda a cada
+// requisição: costurado no texto fixo, congelaria no dia em que o processo
+// subiu e erraria por dias inteiros até o próximo deploy.
+function blocoDeHoje() {
+  const BR_OFFSET_MS = 3 * 60 * 60 * 1000;
+  const agora = new Date(Date.now() - BR_OFFSET_MS);
+  const diaSemana = DIAS_DA_SEMANA[agora.getUTCDay()];
+  const dia = agora.getUTCDate();
+  const mes = MESES_POR_EXTENSO[agora.getUTCMonth()];
+  const ano = agora.getUTCFullYear();
+
+  return `\n\nHOJE É ${diaSemana}, ${dia} de ${mes} de ${ano} (horário de Brasília).
+Use esta data pra contar "diasAtras" e pra resolver mês nomeado:
+- "no domingo" / "domingo passado" = quantos dias desde o último domingo (se hoje É domingo, ela quer dizer o de 7 dias atrás).
+- "na sexta" = quantos dias desde a última sexta-feira.
+- "dia 15" = quantos dias desde o dia 15 mais recente que já passou.
+- "em junho" = "AAAA-06", com o ano em que junho já aconteceu.`;
+}
+
 function blocoCategorias(categoriasExtras) {
   if (!categoriasExtras?.length) return '';
   const despesa = categoriasExtras.filter((c) => c.kind === 'despesa').map((c) => `"${c.name}"`);
@@ -475,7 +503,7 @@ async function extractItems(rawText, categoriasExtras = []) {
   const texto = sanitizarTexto(rawText);
   if (!texto) return [];
 
-  const prompt = SYSTEM_PROMPT + blocoCategorias(categoriasExtras);
+  const prompt = SYSTEM_PROMPT + blocoDeHoje() + blocoCategorias(categoriasExtras);
 
   // Três tentativas no rápido, depois três no reserva. Numa lista só, em vez
   // de dois laços aninhados: a ordem fica explícita e o corpo não precisa de
