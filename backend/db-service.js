@@ -729,6 +729,14 @@ async function apagarTudoDoTelefone(phone) {
     apagados[t] = count || 0;
   }
 
+  // As carteiras voltam ao estado de quem chega agora. Sem isto, quem apagou
+  // tudo continuaria vendo "Empresa" e "Loja" no painel — nomes de carteiras
+  // vazias, de dados que ela pediu pra sumir.
+  await supabaseAdmin
+    .from('users')
+    .update({ wallets: [CARTEIRA_PADRAO], active_wallet: CARTEIRA_PADRAO })
+    .eq('phone', phone);
+
   // O vínculo com a conta do painel sai junto: sem ele, o painel não consegue
   // mais associar aquele login a este número.
   const { data: perfil } = await supabaseAdmin.from('profiles').select('id').eq('phone', phone).maybeSingle();
