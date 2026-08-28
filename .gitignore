@@ -5,3 +5,6 @@ node_modules/
 *.key
 npm-debug.log*
 .DS_Store
+
+# Documento gerado, nao versionado: refaz-se com deploy/gerar-dossie.py
+Guara-Dossie.pdf
