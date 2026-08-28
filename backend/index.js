@@ -107,6 +107,10 @@ Se um dia quiser, ela destrava no site:
 
 Sem pressa nenhuma. Pode ir me mandando seus gastos enquanto isso. 🐺
 
+*📱 E se quiser o Guará na tela inicial:*
+👉 ${PAINEL_URL}/instalar
+_Dois toques, sem loja e sem ocupar espaço._
+
 _Seus dados são só seus. O que eu guardo e por quê:_ ${PAINEL_URL}/privacidade`;
 
 // Para quem já tem conta ligada e mandou algo que não era financeiro.
@@ -120,15 +124,21 @@ Me conta assim que eu anoto na hora:
 Ou me pergunte: _"quanto gastei esse mês?"_
 Digite *ajuda* pra ver tudo que eu faço. 😉`;
 
-const MSG_INSTALAR = `📱 *Não precisa baixar nada!*
+// Quem escreve "quero instalar o app" já decidiu. Abrir com "não precisa
+// baixar nada" é discutir com o pedido da pessoa — ela perguntou COMO, não SE.
+//
+// O "não precisa de loja" continua aqui, mas como alívio depois da instrução,
+// não como resposta no lugar dela.
+const MSG_INSTALAR = `📱 *Bora deixar o Guará na sua tela inicial!*
 
-O Guará já funciona pelo navegador — é só abrir o link e usar:
-👉 ${PAINEL_URL}
-
-*Se você quiser*, dá pra deixar ele na sua tela inicial, junto dos seus apps. Aí abre com um toque, sem digitar endereço:
+Abre aqui que eu te mostro o passo a passo:
 👉 ${PAINEL_URL}/instalar
 
-Funciona igual dos dois jeitos. 😉`;
+A página reconhece se você está no Android ou no iPhone e mostra só os passos do seu — são dois toques.
+
+Depois ele abre igual qualquer outro app, sem digitar endereço. 😉
+
+_Não passa por loja nenhuma, não ocupa espaço, e você pode tirar quando quiser._`;
 
 // A planilha sai do painel, não daqui: o arquivo é montado no navegador com os
 // dados que já estão na tela. Mandar por WhatsApp exigiria gerar o arquivo no
