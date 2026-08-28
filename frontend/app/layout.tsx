@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Archivo, Figtree } from "next/font/google";
 import "./globals.css";
 import SemInsistencia from "@/components/SemInsistencia";
+import RegistrarServiceWorker from "@/components/RegistrarServiceWorker";
 
 // Archivo (Omnibus-Type) no eixo expandido: cara de placa, lê de longe.
 const archivo = Archivo({
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <SemInsistencia />
+        <RegistrarServiceWorker />
         {children}
       </body>
     </html>
