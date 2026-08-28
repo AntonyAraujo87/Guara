@@ -376,7 +376,11 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
     //
     // O leitor simples só responde quando tem certeza; nos outros casos devolve
     // null e a pessoa recebe o aviso honesto abaixo.
-    const simples = lerSemIA(text);
+    // As carteiras entram pra que "gastei 12 na abacate" continue caindo na
+    // Abacate mesmo com a IA fora. Sem elas, ia tudo pra carteira ativa — o
+    // erro silencioso que este leitor existe justamente pra não cometer.
+    const { carteiras } = await contextoDeCarteira(phone);
+    const simples = lerSemIA(text, carteiras);
     if (simples) {
       await salvarEResponder(phone, [simples], carteiraAtiva);
       return;

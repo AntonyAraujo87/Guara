@@ -12,6 +12,10 @@
 
 // ── VALOR ──────────────────────────────────────────────────────────
 // Aceita 30 | 30,50 | 30.50 | R$30 | 1.200,50 | 1200.50 | 1,5k | 2 mil
+function semAcento(t) {
+  return String(t).normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 const ESCALAS = { k: 1e3, mil: 1e3, mi: 1e6, 'milhão': 1e6, 'milhoes': 1e6, 'milhões': 1e6 };
 
 function acharValor(texto) {
@@ -95,11 +99,38 @@ const NAO_E_PRA_MIM = [
 // e aí só a IA dá conta. Aqui a régua é curta de propósito.
 const LIMITE_PALAVRAS = 10;
 
+// A carteira citada, quando a pessoa tem mais de uma. É o único pedaço em que
+// este leitor precisa saber algo de fora — e é barato: os nomes vêm prontos, e
+// achar um deles no texto é comparação de string, não adivinhação.
+//
+// Sem isto, "gastei 12 na abacate" durante uma queda da IA caía na carteira
+// errada em silêncio, que é exatamente o erro que não pode acontecer.
+function acharCarteiraCitada(texto, carteiras) {
+  if (!carteiras || carteiras.length < 2) return '';
+
+  // Comparação por palavras soltas, não por regex: o nome da carteira vem da
+  // pessoa e pode ter parênteses, ponto ou acento — montar um padrão com isso
+  // dentro exigiria escapar tudo certinho, e um escape errado quebra o arquivo
+  // inteiro em vez de só errar a busca.
+  const palavras = new Set(
+    semAcento(texto.toLowerCase()).split(/[^a-z0-9]+/i).filter(Boolean)
+  );
+
+  const achada = carteiras.find((c) => {
+    const nome = semAcento(String(c).toLowerCase()).trim();
+    // Nome de duas letras ou menos acha demais ("PJ" dentro de qualquer coisa).
+    return nome.length >= 3 && palavras.has(nome);
+  });
+  return achada || '';
+}
+
 /**
  * Devolve UM item, ou null quando não dá pra ter certeza.
  * Nunca chuta: null significa "não sei", e quem chama trata isso.
+ *
+ * `carteiras` é opcional: só serve pra reconhecer o nome de uma delas no texto.
  */
-function lerSemIA(textoBruto) {
+function lerSemIA(textoBruto, carteiras = []) {
   const texto = String(textoBruto || '').trim();
   if (!texto) return null;
   if (texto.split(/\s+/).length > LIMITE_PALAVRAS) return null;
@@ -113,13 +144,15 @@ function lerSemIA(textoBruto) {
   const valor = acharValor(texto);
   if (valor === null) return null;
 
+  const carteira = acharCarteiraCitada(texto, carteiras);
+
   if (RETIRAR.test(texto)) {
     return { kind: 'guardado', amount: valor, direction: 'retirar', jar: '', jarVago: false,
-      description: acharDescricao(texto, valor) || 'Retirada', simples: true };
+      carteira, description: acharDescricao(texto, valor) || 'Retirada', simples: true };
   }
   if (GUARDAR.test(texto)) {
     return { kind: 'guardado', amount: valor, direction: 'guardar', jar: '', jarVago: false,
-      description: acharDescricao(texto, valor) || 'Guardado', simples: true };
+      carteira, description: acharDescricao(texto, valor) || 'Guardado', simples: true };
   }
 
   // "+50" e "-50" são inequívocos e vale reconhecer antes dos verbos.
@@ -140,7 +173,7 @@ function lerSemIA(textoBruto) {
     description: descricao || (ehReceita ? 'Entrada' : 'Gasto'),
     diasAtras: 0,
     assinatura: false,
-    carteira: '',
+    carteira,
     simples: true,
   };
 }
