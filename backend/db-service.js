@@ -682,7 +682,73 @@ async function apagarTudoDoTelefone(phone) {
   return { apagados, total, tinhaConta: Boolean(perfil) };
 }
 
+// Converte o último gasto registrado em parcelamento ou em conta mensal.
+//
+// Existe porque quase ninguém diz tudo de uma vez: a pessoa manda "IPTU 200",
+// e só depois lembra de mencionar que está parcelado. Sem isto, a segunda frase
+// não tinha onde encostar — e o Guará respondia algo sem sentido.
+//
+// A janela de 24h evita converter um lançamento de semanas atrás por causa de
+// uma frase solta de hoje.
+const JANELA_CONVERSAO_MS = 24 * 60 * 60 * 1000;
+
+async function ultimaTransacaoRecente(phone) {
+  const desde = new Date(Date.now() - JANELA_CONVERSAO_MS).toISOString();
+  const { data } = await supabaseAdmin
+    .from('transactions')
+    .select('id, amount, type, category, description, created_at')
+    .eq('user_phone', phone)
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  return data?.[0] || null;
+}
+
+async function converterUltimoEmParcelamento(phone, { installments, amount }) {
+  const alvo = await ultimaTransacaoRecente(phone);
+  if (!alvo) return null;
+
+  // Sem valor próprio, cada parcela vale o que foi registrado. Quem diz
+  // "IPTU 200, está em 6x" quase sempre quer dizer 6 parcelas DE 200.
+  const valorParcela = amount > 0 ? amount : Number(alvo.amount);
+  const parcelas = await saveInstallments(phone, {
+    description: alvo.description || alvo.category,
+    category: alvo.category,
+    installments,
+    installmentAmount: valorParcela,
+  });
+
+  // A transação sai: ela virou a primeira parcela, e deixá-la contaria duas vezes.
+  await supabaseAdmin.from('transactions').delete().eq('id', alvo.id);
+
+  return { origem: alvo, parcelas, valorParcela, installments };
+}
+
+async function converterUltimoEmRecorrente(phone, { dayOfMonth, amount }) {
+  const alvo = await ultimaTransacaoRecente(phone);
+  if (!alvo) return null;
+
+  const valor = amount > 0 ? amount : Number(alvo.amount);
+  // Sem dia informado, usa o dia em que a pessoa registrou — é a melhor
+  // aproximação do dia em que a conta costuma cair.
+  const dia = dayOfMonth > 0 ? dayOfMonth : new Date(alvo.created_at).getUTCDate();
+
+  const salvo = await saveRecurring(phone, {
+    description: alvo.description || alvo.category,
+    amount: valor,
+    type: alvo.type,
+    category: alvo.category,
+    dayOfMonth: dia,
+  });
+
+  // A transação FICA: ela é o lançamento deste mês, que já aconteceu. O
+  // recorrente cuida dos próximos. Apagá-la sumiria com um gasto real.
+  return { origem: alvo, recorrente: salvo };
+}
+
 module.exports = {
+  converterUltimoEmParcelamento,
+  converterUltimoEmRecorrente,
   apagarTudoDoTelefone,
   saveTransaction,
   saveDebt,

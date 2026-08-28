@@ -80,13 +80,25 @@ Gatilhos: "paguei a parcela da TV", "quitei a parcela do celular", "paguei a par
 {"kind": "instalar"}
 Gatilhos: "tem app?", "como instalo", "quero o app no celular", "tem pra baixar", "onde baixo", "tem aplicativo", "quero na tela inicial", "manda o link do app", "da pra instalar".
 
-12. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
+12. Converter o último (a pessoa diz que o que ACABOU de registrar é, na verdade, parcelado ou mensal):
+{"kind": "converter_ultimo", "para": "parcelamento" | "recorrente", "installments": number, "dayOfMonth": number, "amount": number}
+Gatilhos de PARCELAMENTO: "está parcelado", "isso é parcelado", "esse é em 6x", "parcelei esse", "dividi em 3", "essa conta é parcelada", "em 10 vezes", "é em 12x", "6x", "3 vezes".
+Gatilhos de RECORRENTE: "isso é todo mês", "essa conta é mensal", "é fixo", "vem todo mês", "todo mês tem essa", "é recorrente", "essa é sempre".
+- installments = número de parcelas, se a pessoa disser. Use 0 se ela NÃO disser — o sistema vai perguntar.
+- dayOfMonth = dia do mês, se ela disser. Use 0 se não disser.
+- amount = valor de cada parcela, se ela citar um valor diferente. Use 0 para manter o valor já registrado.
+- MUITO IMPORTANTE: uma mensagem curta e solta que só diz uma quantidade de vezes — "6x", "em 6", "6 vezes", "são 10" — é converter_ultimo com para "parcelamento". A pessoa está respondendo uma pergunta que eu fiz.
+- Uma mensagem curta que só diz um dia — "dia 10", "todo dia 5" — depois de eu perguntar, é converter_ultimo com para "recorrente" e dayOfMonth preenchido.
+- NÃO confunda com "parcela_paga": "está parcelado" fala do que a conta É; "paguei a parcela" fala de um pagamento que ACONTECEU.
+- NÃO confunda com "parcelamento": aquele registra uma compra NOVA com valor e vezes na mesma frase ("comprei uma TV em 6x de 200"). Este aqui só reclassifica algo que já foi anotado.
+
+13. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
 {"kind": "apagar_dados", "confirmado": boolean}
 Gatilhos: "quero apagar meus dados", "apaga tudo", "quero excluir minha conta", "quero sair e apagar tudo", "me tira do sistema", "deleta tudo que voce tem de mim".
 - confirmado = true APENAS se a mensagem for exatamente a palavra de confirmação "APAGAR TUDO" (em maiúsculas ou não). Em qualquer outro caso, false.
 - CUIDADO com a diferença: "apaga o último" é kind "desfazer" (um lançamento só). "apaga tudo" é kind "apagar_dados" (a conta inteira). Se a frase citar UM item ou "o último", é sempre desfazer.
 
-13. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+14. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -100,6 +112,8 @@ Regras:
 - Se a mensagem for só "+50" ou "+ 50", trate como transação receita de R$50, categoria "Outros". Se for só "-50" ou "- 50", trate como transação despesa de R$50, categoria "Outros".
 - person é o nome próprio da pessoa envolvida na dívida, se mencionado (ex: "João"). NÃO use pronomes ("você", "tu", "eu", "ele", "ela") como person — nesse caso deixe string vazia.
 - Se a mensagem mencionar vários itens distintos (categorias diferentes, tipos diferentes, ou mistura de transação e dívida), retorne um item na lista para cada um.
+- VALOR QUE NÃO SE REPETE: quando a segunda parte da frase não traz valor próprio, ela herda o valor já dito. "Recebi 1621 do seguro, guardei tbm" são DOIS itens: uma receita de 1621 E um guardado de 1621. Igualmente: "ganhei 500 e guardei tudo", "caiu o salário de 3000, separei metade" (nesse caso 1500), "recebi 200 e já paguei a conta de luz". Nunca descarte a segunda parte só porque ela não repetiu o número.
+- "tbm", "também", "tudo", "isso", "esse dinheiro" no meio da frase quase sempre apontam para o valor que acabou de ser mencionado.
 - Se vários itens forem parte da mesma compra/ocasião e da mesma categoria (ex: "comi um lanche e tomei um suco, 15 reais"), pode juntar em um único item somando os valores.
 - Escolha a categoria que melhor descreve cada gasto/receita, mesmo que a mensagem seja informal, tenha gírias, erros de português ou esteja sem acentuação.
 - Mensagens em português informal/coloquial, com erro de digitação, sem acento, com abreviações de internet (vc, pra, cê, tb, blz) ou vindas de áudio transcrito, DEVEM ser interpretadas normalmente pelo sentido — nunca rejeite um item só porque a escrita é informal.
@@ -107,7 +121,8 @@ Regras:
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
-- Quando a mensagem for "ajuda", "meta", "instalar", "apagar_dados" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- Quando a mensagem for "ajuda", "meta", "instalar", "apagar_dados", "converter_ultimo" ou "desfazer", retorne SÓ esse item, sozinho na lista.
+- QUEM ESCREVE É GENTE COMUM, com pressa. Frase curta, sem pontuação, sem acento, com erro de digitação e sem contexto é o NORMAL, não a exceção. "iptu 200", "ta parcelado", "6x", "pago todo mes" são mensagens legítimas e você deve entendê-las. Nunca devolva lista vazia porque a frase parecia incompleta demais: escolha a intenção mais provável e deixe os campos que faltam em 0 ou string vazia — o sistema pergunta o que faltar.
 - "recorrente", "parcela_paga", "consulta" e "editar_recorrente" PODEM vir em lote — uma pessoa junta coisas numa mensagem só. Retorne UM ITEM PARA CADA, nunca só o primeiro:
   - "59,90 na Netflix / 29,90 no Prime / 30 na Vivo" = 3 itens "recorrente".
   - "paguei a parcela da TV e a do celular" = 2 itens "parcela_paga".
@@ -180,6 +195,15 @@ async function extractItems(rawText, categoriasExtras = []) {
       return parsed.map((item) => {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
+        }
+        if (item.kind === 'converter_ultimo') {
+          return {
+            kind: 'converter_ultimo',
+            para: item.para === 'recorrente' ? 'recorrente' : 'parcelamento',
+            installments: Number(item.installments) || 0,
+            dayOfMonth: Number(item.dayOfMonth) || 0,
+            amount: Number(item.amount) || 0,
+          };
         }
         if (item.kind === 'apagar_dados') {
           // A confirmação nunca vem da IA: ela é conferida no texto cru, mais

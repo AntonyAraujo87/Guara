@@ -28,6 +28,8 @@ const {
   getGoal,
   saveGoal,
   apagarTudoDoTelefone,
+  converterUltimoEmParcelamento,
+  converterUltimoEmRecorrente,
   supabaseAdmin,
 } = require('./db-service');
 
@@ -164,6 +166,10 @@ const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 "quais minhas parcelas?"
 "meus últimos gastos"
 
+*🔄 Reclassificar o que já mandou*
+"está parcelado" _(eu pergunto em quantas vezes)_
+"isso é todo mês"
+
 *↩️ Corrigir um erro*
 "apaga o último"
 
@@ -271,6 +277,14 @@ async function processIncomingMessage(phone, text) {
 
   if (intencao === 'ajuda') {
     await replyWhatsApp(phone, MSG_AJUDA);
+    return;
+  }
+
+  // "Está parcelado" / "isso é todo mês": a pessoa reclassifica o que acabou de
+  // mandar. Quase ninguém diz tudo de uma vez, e antes disto a segunda frase
+  // não tinha onde encostar — o Guará respondia algo sem sentido.
+  if (intencao === 'converter_ultimo') {
+    await replyWhatsApp(phone, await responderConverter(phone, items[0]));
     return;
   }
 
@@ -584,6 +598,65 @@ async function responderEditarRecorrente(phone, itens) {
     partes.push('', `⚠️ Não achei lançamento mensal de: *${perdidos.join('*, *')}*`);
   }
   return partes.join('\n');
+}
+
+async function responderConverter(phone, item) {
+  const ehParcela = item.para === 'parcelamento';
+
+  // Faltou o número: PERGUNTA, em vez de errar um palpite. A resposta curta
+  // ("6x", "dia 10") volta como converter_ultimo e cai aqui completa.
+  if (ehParcela && item.installments <= 0) {
+    return `Beleza, vou marcar como parcelado. 💳
+
+*Em quantas vezes?*
+Me responde só o número, tipo: _"6x"_`;
+  }
+  if (!ehParcela && item.dayOfMonth <= 0 && item.amount <= 0) {
+    return `Entendi, é uma conta que se repete todo mês. 🔁
+
+*Cai em que dia?*
+Me responde tipo: _"dia 10"_
+
+Se não souber o dia certo, é só dizer _"não sei"_ que eu uso o de hoje.`;
+  }
+
+  const r = ehParcela
+    ? await converterUltimoEmParcelamento(phone, item)
+    : await converterUltimoEmRecorrente(phone, item);
+
+  if (!r) {
+    return `Não achei nenhum lançamento recente pra converter. 🤔
+
+Me manda o gasto primeiro, tipo _"IPTU 200"_, e aí me diz que é parcelado.`;
+  }
+
+  if (ehParcela) {
+    const total = r.valorParcela * r.installments;
+    const proximas = await upcomingInstallments(phone, 3);
+    const partes = [
+      '💳 *Convertido em parcelamento!*',
+      '',
+      `${r.origem.description || r.origem.category} — ${r.installments}x de R$ ${currency.format(r.valorParcela)}`,
+      `Total: R$ ${currency.format(total)}`,
+      '',
+      'Espalhei as parcelas nos próximos meses. 📅',
+    ];
+    if (proximas.length > 0) {
+      partes.push('', `Próxima em ${nomeDoMes(proximas[0].mes)}: R$ ${currency.format(proximas[0].total)}`);
+    }
+    partes.push('', `Veja mês a mês no painel 👉 ${PAINEL_URL}`);
+    return partes.join('\n');
+  }
+
+  const rec = r.recorrente;
+  return [
+    '🔁 *Virou conta mensal!*',
+    '',
+    `${rec.description} — R$ ${currency.format(Number(rec.amount))}`,
+    `Todo dia *${rec.day_of_month}* eu lanço sozinho pra você. 😉`,
+    '',
+    '_O lançamento de agora continua valendo: ele é o deste mês._',
+  ].join('\n');
 }
 
 async function responderParcelaPaga(phone, itens) {
