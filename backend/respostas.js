@@ -211,6 +211,17 @@ async function responderDesfazer(phone) {
   return `↩️ *Apaguei:*\n${linha}\n\nPode mandar de novo do jeito certo. 😉`;
 }
 
+// O nome da meta às vezes É o prazo, quando a pessoa disse "juntar 5 mil até
+// novembro" antes de existir campo de prazo. Mostrar os dois vira "pra novembro
+// / Até 30 de novembro" — a mesma informação duas vezes, uma delas errada de
+// tipo. Some com o nome quando ele só repete o mês do prazo.
+function nomeQueNaoRepeteOPrazo(nome, prazo) {
+  if (!nome) return '';
+  if (!prazo) return nome;
+  const mesDoPrazo = nomeDoMes(`${String(prazo).slice(0, 7)}-01`).split('/')[0];
+  return nome.trim().toLowerCase() === mesDoPrazo.toLowerCase() ? '' : nome;
+}
+
 // "2026-11-30" -> "30 de novembro". Data crua no meio de uma frase em
 // português parece erro de sistema.
 function formatarData(iso) {
@@ -241,7 +252,7 @@ async function responderPlanejar(phone) {
   if (p.erro === 'sem_prazo') {
     const falta = `R$ ${currency.format(p.falta)}`;
     return [
-      `🎯 Sua meta é juntar *R$ ${currency.format(p.alvo)}*${p.meta.goal_name ? ` pra ${p.meta.goal_name}` : ''}.`,
+      `🎯 Sua meta é juntar *R$ ${currency.format(p.alvo)}*${nomeQueNaoRepeteOPrazo(p.meta.goal_name, p.meta.goal_deadline) ? ` pra ${nomeQueNaoRepeteOPrazo(p.meta.goal_name, p.meta.goal_deadline)}` : ''}.`,
       `Você já tem R$ ${currency.format(p.guardado)}, então faltam *${falta}*.`,
       '',
       '*Até quando você quer chegar lá?*',
@@ -273,7 +284,7 @@ async function responderPlanejar(phone) {
   const partes = [
     '🎯 *Seu plano pra bater a meta*',
     '',
-    `Objetivo: R$ ${currency.format(p.alvo)}${p.meta.goal_name ? ` — ${p.meta.goal_name}` : ''}`,
+    `Objetivo: R$ ${currency.format(p.alvo)}${nomeQueNaoRepeteOPrazo(p.meta.goal_name, p.meta.goal_deadline) ? ` — ${nomeQueNaoRepeteOPrazo(p.meta.goal_name, p.meta.goal_deadline)}` : ''}`,
     `Já guardado: R$ ${currency.format(p.guardado)}`,
     `*Falta: R$ ${currency.format(p.falta)}* em ${p.dias} dias`,
     '',
@@ -315,7 +326,8 @@ async function responderMeta(phone, item) {
   }
   if (Number(salva.goal_target) > 0) {
     const pct = Math.min(100, Math.round((total / Number(salva.goal_target)) * 100));
-    partes.push(`🏁 Juntar *R$ ${currency.format(Number(salva.goal_target))}*${salva.goal_name ? ` pra ${salva.goal_name}` : ''}.`);
+    const rotulo = nomeQueNaoRepeteOPrazo(salva.goal_name, salva.goal_deadline);
+    partes.push(`🏁 Juntar *R$ ${currency.format(Number(salva.goal_target))}*${rotulo ? ` pra ${rotulo}` : ''}.`);
     if (salva.goal_deadline) partes.push(`📆 Até ${formatarData(salva.goal_deadline)}.`);
     partes.push(`Você já tem R$ ${currency.format(total)} (${pct}%).`);
   }
