@@ -72,8 +72,40 @@ function quandoAconteceu(diasAtras) {
   return paraUTC(dia).toISOString();
 }
 
+// Rede ruim faz o WhatsApp entregar a mesma ação mais de uma vez, com ids
+// diferentes — e dedo nervoso faz a pessoa tocar em enviar duas vezes. Nos dois
+// casos o resultado era o mesmo gasto contado duas ou três vezes, e a pessoa só
+// descobria pelo saldo errado.
+//
+// A checagem fica AQUI, e não na entrada da mensagem, por dois motivos: é onde
+// o dano acontece, e não atrapalha quem repete uma PERGUNTA (responder "quanto
+// gastei" duas vezes não faz mal nenhum; gravar o gasto duas vezes faz).
+//
+// Quinze segundos: repetição de rede e toque duplo acontecem em segundos. Dois
+// depósitos iguais de verdade, separados por mais que isso, continuam passando.
+const JANELA_DUPLICATA_MS = 15_000;
+
+async function acharIgualRecente(tabela, filtros) {
+  const desde = new Date(Date.now() - JANELA_DUPLICATA_MS).toISOString();
+  let q = supabaseAdmin.from(tabela).select('*').gte('created_at', desde);
+  for (const [coluna, valor] of Object.entries(filtros)) {
+    q = valor === null ? q.is(coluna, null) : q.eq(coluna, valor);
+  }
+  const { data } = await q.limit(1);
+  return data?.[0] || null;
+}
+
 async function saveTransaction(phone, transaction, carteira = carteiraAtual()) {
   await ensureUser(phone);
+
+  const igual = await acharIgualRecente('transactions', {
+    user_phone: phone,
+    wallet: carteira,
+    amount: transaction.amount,
+    type: transaction.type,
+    description: transaction.description,
+  });
+  if (igual) return { ...igual, duplicata: true };
 
   const { data, error } = await supabaseAdmin
     .from('transactions')
@@ -95,6 +127,15 @@ async function saveTransaction(phone, transaction, carteira = carteiraAtual()) {
 
 async function saveDebt(phone, debt, carteira = carteiraAtual()) {
   await ensureUser(phone);
+
+  const igual = await acharIgualRecente('debts', {
+    user_phone: phone,
+    wallet: carteira,
+    amount: debt.amount,
+    direction: debt.direction,
+    description: debt.description,
+  });
+  if (igual) return { ...igual, duplicata: true };
 
   const { data, error } = await supabaseAdmin
     .from('debts')
@@ -474,6 +515,14 @@ async function upcomingInstallments(phone, meses = 12, carteira = carteiraAtual(
 // ── COFRINHO ───────────────────────────────────────────────────────
 async function saveSaving(phone, { amount, direction, description, jar, diasAtras }, carteira = carteiraAtual()) {
   const valor = direction === 'retirar' ? -Math.abs(amount) : Math.abs(amount);
+  const igual = await acharIgualRecente('savings', {
+    user_phone: phone,
+    wallet: carteira,
+    amount: valor,
+    jar: jar || null,
+  });
+  if (igual) return { ...igual, duplicata: true };
+
   const { error } = await supabaseAdmin.from('savings').insert({
     user_phone: phone,
     wallet: carteira,

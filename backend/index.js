@@ -126,6 +126,36 @@ function verifyMetaSignature(req) {
 }
 
 
+// Quem já recebeu o aviso de exclusão, e há quanto tempo.
+//
+// Sem isto a exclusão era "em duas etapas" só no papel: quem digitasse APAGAR
+// TUDO direto pulava a confirmação e perdia tudo na hora — e a frase está
+// escrita na mensagem de ajuda, à vista de qualquer um que pegue o celular.
+//
+// Agora a frase só executa se ELA for resposta a uma pergunta minha. Digitada
+// do nada, ela vira o pedido — e aí sim aparece o aviso.
+const AVISO_EXCLUSAO_MS = 10 * 60 * 1000;
+const avisadosDaExclusao = new Map();
+
+function jaFoiAvisado(phone) {
+  const quando = avisadosDaExclusao.get(phone);
+  if (!quando) return false;
+  if (Date.now() - quando > AVISO_EXCLUSAO_MS) {
+    avisadosDaExclusao.delete(phone);
+    return false;
+  }
+  return true;
+}
+
+function marcarAvisado(phone) {
+  avisadosDaExclusao.set(phone, Date.now());
+  // Sem limpeza o Map cresce pra sempre num processo que não reinicia.
+  if (avisadosDaExclusao.size > 500) {
+    const limite = Date.now() - AVISO_EXCLUSAO_MS;
+    for (const [k, v] of avisadosDaExclusao) if (v < limite) avisadosDaExclusao.delete(k);
+  }
+}
+
 // Evita reprocessar a mesma mensagem se o WhatsApp reentregar o webhook (in-memory, por processo)
 const processedMessageIds = new Set();
 
@@ -311,7 +341,7 @@ async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) 
   // que a IA devolveu: interpretar "apaga tudo" errado custa caro demais pra
   // depender de um modelo. Só a frase exata destrava.
   if (intencao === 'apagar_dados') {
-    if (text.trim().toUpperCase() === 'APAGAR TUDO') {
+    if (text.trim().toUpperCase() === 'APAGAR TUDO' && jaFoiAvisado(phone)) {
       try {
         const r = await apagarTudoDoTelefone(phone);
         const partes = [
@@ -338,6 +368,7 @@ async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) 
       }
       return;
     }
+    marcarAvisado(phone);
     await replyWhatsApp(phone, MSG_APAGAR_CONFIRMA);
     return;
   }
