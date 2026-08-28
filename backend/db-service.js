@@ -127,9 +127,31 @@ function paraUTC(dataBR) {
 }
 
 // Devolve { start, end } em ISO (UTC) para o período pedido, calculado no fuso de Brasília.
+const NOMES_DOS_MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
 function periodBounds(period) {
   const agora = agoraBR();
   const inicioDoDia = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate()));
+
+  // Mês específico ("2026-06"). O painel navega pra qualquer mês desde sempre;
+  // no chat só dava pra pedir este e o passado, então "quanto gastei em junho"
+  // não tinha resposta.
+  const mesExato = /^(\d{4})-(\d{2})$/.exec(String(period || ''));
+  if (mesExato) {
+    const ano = Number(mesExato[1]);
+    const mes = Number(mesExato[2]) - 1;
+    if (mes >= 0 && mes <= 11) {
+      const inicio = new Date(Date.UTC(ano, mes, 1));
+      const fim = new Date(Date.UTC(ano, mes + 1, 1));
+      // O ano só aparece quando não é o corrente: "em junho" é mais natural que
+      // "em junho de 2026" quando 2026 é o ano em que se está falando.
+      const label = ano === agora.getUTCFullYear()
+        ? `em ${NOMES_DOS_MESES[mes]}`
+        : `em ${NOMES_DOS_MESES[mes]} de ${ano}`;
+      return { start: paraUTC(inicio).toISOString(), end: paraUTC(fim).toISOString(), label };
+    }
+  }
 
   switch (period) {
     case 'hoje':

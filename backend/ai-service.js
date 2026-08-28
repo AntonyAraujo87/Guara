@@ -51,6 +51,7 @@ Gatilhos: "quanto gastei esse mês", "qual meu saldo", "quanto entrou essa seman
 - metric "guardado" = quanto tem no cofrinho / como está a meta. Gatilhos: "quanto eu tenho guardado", "quanto já juntei", "como está minha meta", "quanto falta pra minha meta", "meu cofrinho".
 - metric "parcelas" = o que está parcelado / próximas faturas. Gatilhos: "quais minhas parcelas", "quanto tenho parcelado", "minhas próximas faturas", "o que vou pagar mês que vem", "quanto devo de parcela".
 - period padrão é "mes" quando a pessoa não disser o período. "esse mês"/"este mês" = "mes". "mês passado" = "mes_passado". "essa semana"/"últimos 7 dias" = "semana". "no total"/"desde sempre"/"tudo" = "tudo".
+- MÊS ESPECÍFICO: quando ela nomeia o mês, devolva "AAAA-MM". "quanto gastei em junho" com o ano corrente 2026 = "2026-06". "em dezembro do ano passado" = "2025-12". Se o mês nomeado ainda não chegou neste ano, é do ano passado: em agosto de 2026, "em novembro" = "2025-11".
 - category só quando a pergunta citar uma categoria específica (ex: "quanto gastei com comida" → "Alimentação"). Senão deixe string vazia.
 
 5. Guardado (dinheiro que a pessoa separou/poupou — NÃO é gasto, é dinheiro que continua sendo dela):

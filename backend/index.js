@@ -1205,11 +1205,11 @@ async function responderCategoria(phone, item) {
 // O gráfico do painel, em texto. Barras de blocos porque é o que o WhatsApp
 // desenha igual em qualquer aparelho — emoji e tabela quebram o alinhamento.
 async function responderResumo(phone, period) {
-  const { saidas, entradas, categorias } = await sumTransactions(phone, period || 'mes');
+  const { saidas, entradas, categorias, label } = await sumTransactions(phone, period || 'mes');
   const cats = (categorias || []).filter((c) => c.valor > 0);
 
   if (cats.length === 0) {
-    return `Ainda não tem gasto nenhum ${rotuloPeriodo(period)} pra resumir. 🐺`;
+    return `Ainda não tem gasto nenhum ${rotuloPeriodo(period, label)} pra resumir. 🐺`;
   }
 
   // Barra de blocos porque é o único desenho que o WhatsApp alinha igual em
@@ -1225,7 +1225,7 @@ async function responderResumo(phone, period) {
 
   const partes = [
     `*📊 PRA ONDE FOI O DINHEIRO*`,
-    `_${rotuloPeriodo(period)}_`,
+    `_${rotuloPeriodo(period, label)}_`,
     '',
     linhas.join(NL + NL),
     '',
@@ -1237,7 +1237,11 @@ async function responderResumo(phone, period) {
   return partes.join(NL);
 }
 
-function rotuloPeriodo(period) {
+// O sumTransactions já devolve um label pronto pro período pedido, inclusive
+// pra mês nomeado ("em junho"). Usar o dele evita que dois lugares tenham
+// opinião diferente sobre como se chama o mesmo pedaço de tempo.
+function rotuloPeriodo(period, labelDoBanco) {
+  if (labelDoBanco) return labelDoBanco;
   if (period === 'mes_passado') return 'no mês passado';
   if (period === 'semana') return 'nesta semana';
   if (period === 'tudo') return 'no total';
