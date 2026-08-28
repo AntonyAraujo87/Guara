@@ -25,14 +25,16 @@ const SYSTEM_PROMPT = `Você é um assistente pessoal de controle de gastos, no 
 Extraia da mensagem do usuário TODOS os itens financeiros mencionados e responda APENAS com um JSON válido, sem markdown, sem texto extra, no formato de uma lista. Cada item é de um destes dois tipos:
 
 1. Transação concluída (dinheiro que já mudou de mão de verdade — já paguei, já recebi, já comprei):
-{"kind": "transacao", "amount": number, "type": "receita" | "despesa", "category": string, "description": string}
+{"kind": "transacao", "amount": number, "type": "receita" | "despesa", "category": string, "description": string, "diasAtras": number, "assinatura": boolean, "carteira": string}
+"diasAtras" = há quantos dias o gasto aconteceu (0 = hoje). "assinatura" = é um serviço que costuma ser mensal. "carteira" = só se a pessoa disser de qual é. Os três estão explicados no fim.
 Categorias válidas para despesa: "Alimentação", "Transporte", "Moradia", "Saúde", "Lazer", "Compras", "Outros".
 Categorias válidas para receita: "Salário", "Freelance", "Investimentos", "Presente/Reembolso", "Outros".
+- QUANDO ACONTECEU: preencha "diasAtras" sempre que a frase disser o tempo. "ontem" = 1, "anteontem" = 2, "sexta passada" = conte os dias, "semana passada" = 7, "mês passado" = 30. Sem menção nenhuma, 0.
 - SALDO QUE A PESSOA JÁ TEM: quando ela declara o dinheiro que possui hoje — "tenho 1500 de saldo no banco", "tenho 800 na conta", "meu saldo é 2000", "tenho 500 na carteira", "comecei com 1000" — isso é uma RECEITA (type "receita", category "Outros", description "Saldo inicial"). NÃO é consulta: ela está informando um valor, não perguntando.
 - A diferença entre informar e perguntar: "tenho 1500 no banco" INFORMA (é transacao). "quanto tenho no banco?" PERGUNTA (é consulta).
 
 2. Dívida (dinheiro que ainda NÃO mudou de mão — promessa, combinado, empréstimo pendente):
-{"kind": "divida", "amount": number, "direction": "a_receber" | "a_pagar", "person": string, "description": string}
+{"kind": "divida", "amount": number, "direction": "a_receber" | "a_pagar", "person": string, "description": string, "diasAtras": number, "carteira": string}
 
 3. Parcelamento (compra dividida em parcelas — o dinheiro ainda vai sair aos poucos):
 {"kind": "parcelamento", "installments": number, "installmentAmount": number, "total": number, "category": string, "description": string}
@@ -52,7 +54,7 @@ Gatilhos: "quanto gastei esse mês", "qual meu saldo", "quanto entrou essa seman
 - category só quando a pergunta citar uma categoria específica (ex: "quanto gastei com comida" → "Alimentação"). Senão deixe string vazia.
 
 5. Guardado (dinheiro que a pessoa separou/poupou — NÃO é gasto, é dinheiro que continua sendo dela):
-{"kind": "guardado", "amount": number, "direction": "guardar" | "retirar", "jar": string, "jarVago": boolean, "description": string}
+{"kind": "guardado", "amount": number, "direction": "guardar" | "retirar", "jar": string, "jarVago": boolean, "description": string, "diasAtras": number, "carteira": string}
 "jar" é o NOME do cofrinho, e só sai preenchido quando a pessoa DIZ o nome: "no cofrinho da viagem" -> jar "Viagem", "guardar 15 no secador" -> jar "Secador".
 "jarVago" é true quando ela fala de cofrinho SEM dizer qual: "guardar 15 nessa caixinha", "põe 50 no cofrinho", "guarda 20 na caixinha". Nesses casos jar fica "" e o sistema pergunta qual.
 Se ela não mencionar cofrinho nenhum ("guardei 200"), jar fica "" e jarVago é false.
