@@ -43,6 +43,16 @@ jobs:
           npm ci --prefer-offline --no-audit --fund=false
           npx eslint .
 
+      - name: Conferir que o backend carrega
+        working-directory: backend
+        run: |
+          # Barreira antes de construir a imagem. Um export apontando pra
+          # função apagada passa no node --check, vira container, sobe em
+          # produção e derruba o site — foi o que aconteceu. Melhor falhar
+          # aqui, onde não custa nada.
+          npm ci --prefer-offline --no-audit --fund=false
+          node verificar-modulos.js
+
       - name: Montar o nome da imagem
         # O registro do GitHub só aceita nome em minúsculas, e o usuário tem
         # maiúsculas (AntonyAraujo87). Sem converter, o envio falha com

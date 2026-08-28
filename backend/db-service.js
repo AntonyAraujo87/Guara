@@ -1216,6 +1216,23 @@ async function renomearCarteira(phone, de, para) {
   return r;
 }
 
+// Trocar não mexe em dado nenhum — muda uma coluna só. Por isso continua
+// aqui, e não virou função do banco: transação e trava seriam peso sem motivo.
+async function trocarCarteira(phone, nome) {
+  const { carteiras, ativa } = await contextoDeCarteira(phone);
+  // resolverCarteira entende o nome e também o apontamento ("essa mesma"),
+  // que é como a pessoa se refere à carteira recém-criada.
+  const alvo = resolverCarteira(phone, nome, carteiras, ativa);
+  if (!alvo) return { erro: 'nao_achei', carteiras };
+  if (alvo === ativa) return { jaEstava: true, nome: alvo, carteiras };
+
+  const { error } = await supabaseAdmin
+    .from('users').update({ active_wallet: alvo }).eq('phone', phone);
+  if (error) throw error;
+  lembrarCarteira(phone, alvo);
+  return { nome: alvo, carteiras };
+}
+
 async function apagarCarteira(phone, nome) {
   return chamarCarteira('guara_apagar_carteira', {
     p_phone: phone,

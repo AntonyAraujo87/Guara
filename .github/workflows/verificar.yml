@@ -44,3 +44,12 @@ jobs:
             node --check "$arquivo"
           done
           echo "sintaxe ok em $(ls *.js | wc -l) arquivos"
+
+      - name: Conferir que o backend CARREGA
+        working-directory: backend
+        run: |
+          # node --check só valida sintaxe. Já deixou passar um export
+          # apontando pra função apagada — sintaxe perfeita, e o backend em
+          # loop de restart com o site em 503. Isto carrega de verdade.
+          npm ci --prefer-offline --no-audit --fund=false
+          node verificar-modulos.js
