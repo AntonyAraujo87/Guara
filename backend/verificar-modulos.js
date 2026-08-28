@@ -22,7 +22,7 @@ process.env.META_ACCESS_TOKEN ||= 'token-de-verificacao';
 
 // index.js fica de fora: carregá-lo sobe o servidor e o processo nunca termina.
 // Ele é conferido pelo outro caminho, o dos requires destruturados.
-const MODULOS = ['db-service.js', 'ai-service.js', 'media-service.js', 'leitura-simples.js'];
+const MODULOS = ['formato.js', 'mensagens.js', 'db-service.js', 'ai-service.js', 'media-service.js', 'leitura-simples.js', 'respostas.js'];
 
 let problemas = 0;
 const exportados = {};

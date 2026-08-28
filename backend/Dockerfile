@@ -11,7 +11,7 @@ RUN npm ci --omit=dev
 # O preço é este: arquivo novo que não entrar aqui derruba o backend em loop de
 # restart, com "Cannot find module". Já aconteceu — ao criar um .js novo,
 # acrescente aqui na mesma mudança.
-COPY index.js ai-service.js db-service.js media-service.js leitura-simples.js run-recurring.js verificar-modulos.js ./
+COPY index.js formato.js mensagens.js respostas.js ai-service.js db-service.js media-service.js leitura-simples.js run-recurring.js verificar-modulos.js ./
 
 EXPOSE 3001
 
