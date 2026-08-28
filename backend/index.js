@@ -33,6 +33,8 @@ const {
   converterUltimoEmParcelamento,
   moverUltimoGuardado,
   moverUltimoParaCarteira,
+  resolverCarteira,
+  lembrarCarteira,
   CARTEIRA_PADRAO,
   comCarteira,
   contextoDeCarteira,
@@ -619,22 +621,15 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
   await salvarEResponder(phone, items, carteiraAtiva);
 }
 
-// Casa o nome que a pessoa falou com uma carteira que existe. "empresa",
-// "Empresa", "da empresa" e "PJ" precisam achar a mesma coisa.
-function acharCarteira(carteiras, dito) {
-  if (!dito) return null;
-  const alvo = dito.toLowerCase().trim();
-  return carteiras.find((c) => c.toLowerCase() === alvo)
-    || carteiras.find((c) => c.toLowerCase().includes(alvo) || alvo.includes(c.toLowerCase()))
-    || null;
-}
-
 async function salvarEResponder(phone, items, carteiraAtiva) {
   // Cada item na SUA carteira. "Gastei 50 da empresa com lanche e 50 do pessoal
   // com combustível" são dois destinos diferentes na mesma frase — usar a
   // primeira carteira pros dois jogava o gasto de casa na conta da empresa.
-  const { carteiras } = await contextoDeCarteira(phone);
-  const destinos = items.map((i) => acharCarteira(carteiras, i.carteira) || carteiraAtiva);
+  const { carteiras, ativa } = await contextoDeCarteira(phone);
+  // resolverCarteira entende tanto o nome ("empresa", "PJ") quanto o
+  // apontamento ("nessa mesma carteira"), que é como a pessoa se refere à que
+  // acabou de criar sem repetir o nome.
+  const destinos = items.map((i) => resolverCarteira(phone, i.carteira, carteiras, ativa) || carteiraAtiva);
 
   const saved = [];
   const ondeSalvou = [];
@@ -660,6 +655,8 @@ async function salvarEResponder(phone, items, carteiraAtiva) {
   }
 
   const foraDaAtiva = [...new Set(ondeSalvou.filter((c) => c !== carteiraAtiva))];
+  // Citou uma carteira? Ela passa a ser o alvo de "nessa mesma" na próxima.
+  if (foraDaAtiva.length === 1) lembrarCarteira(phone, foraDaAtiva[0]);
 
   // Guardar dinheiro merece resposta própria: mostra o cofrinho e o andamento da meta.
   if (saved.length === 1 && saved[0].kind === 'guardado') {
@@ -1001,13 +998,16 @@ async function responderCarteira(phone, item, ativa) {
     }
     if (r.erro) return 'Como você quer chamar a carteira? Me diz tipo: _"cria a carteira Empresa"_';
 
+    // Criar não troca de contexto, e isso precisa ficar explícito: quem achasse
+    // que entrou nela mandaria o próximo gasto pensando que vai pra lá.
     return [
       `👛 *Carteira ${r.nome} criada!*`,
       '',
-      `A partir de agora eu lanço tudo aqui. Saldo, gastos, parcelas e cofrinhos dela são separados da *${CARTEIRA_PADRAO}*.`,
+      `Você continua na *${ativa}* — nada mudou de lugar.`,
       '',
-      `Pra voltar: _"muda pra ${CARTEIRA_PADRAO}"_`,
-      `Pra lançar na outra sem sair daqui: _"gastei 50, é pessoal"_`,
+      `Pra lançar nela: _"gastei 50 na ${r.nome.toLowerCase()}"_`,
+      `ou _"nessa mesma carteira, gastei 50"_`,
+      `Pra ficar nela: _"muda pra ${r.nome.toLowerCase()}"_`,
     ].join(NL);
   }
 

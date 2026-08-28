@@ -1106,6 +1106,60 @@ const TABELAS_COM_CARTEIRA = ['transactions', 'debts', 'installments', 'savings'
 // onde a tela para de ajudar.
 const LIMITE_CARTEIRAS = 10;
 
+// "Nessa mesma carteira" é uma referência, e a IA não tem memória da mensagem
+// anterior — ela veria "essa mesma" e sairia procurando uma carteira com esse
+// nome. Então quem lembra é o servidor.
+//
+// Guardado em memória, não no banco: é uma dica de dez minutos, não um dado.
+// Perder isso num restart custa uma pergunta a mais; uma coluna nova custa uma
+// migração e mais uma coisa pra manter em pé pra sempre.
+const MEMORIA_CARTEIRA_MS = 10 * 60 * 1000;
+const ultimaCarteiraFalada = new Map();
+
+function lembrarCarteira(phone, nome) {
+  if (!nome) return;
+  ultimaCarteiraFalada.set(phone, { nome, quando: Date.now() });
+  // Sem isto o Map cresce pra sempre num processo de longa duração.
+  if (ultimaCarteiraFalada.size > 500) {
+    const limite = Date.now() - MEMORIA_CARTEIRA_MS;
+    for (const [k, v] of ultimaCarteiraFalada) if (v.quando < limite) ultimaCarteiraFalada.delete(k);
+  }
+}
+
+function carteiraLembrada(phone) {
+  const r = ultimaCarteiraFalada.get(phone);
+  if (!r) return null;
+  if (Date.now() - r.quando > MEMORIA_CARTEIRA_MS) {
+    ultimaCarteiraFalada.delete(phone);
+    return null;
+  }
+  return r.nome;
+}
+
+// Palavras com que a pessoa aponta pra uma carteira em vez de nomeá-la.
+const APONTA_PRA_CARTEIRA = /^(essa|esta|nessa|nesta|nela|na mesma|essa mesma|nessa mesma|a mesma|mesma|ela|essa ai|essa aí|a de agora|a nova|a que criei|a recem criada|a recém-criada)( carteira| conta)?$/i;
+
+// Resolve o nome que a pessoa disse — inclusive quando ela apontou em vez de
+// nomear. Devolve null quando não dá pra ter certeza.
+function resolverCarteira(phone, dito, carteiras, ativa) {
+  const bruto = String(dito || '').trim();
+  if (!bruto) return null;
+
+  if (APONTA_PRA_CARTEIRA.test(semAcento(bruto.toLowerCase()))
+      || APONTA_PRA_CARTEIRA.test(bruto)) {
+    // A que ela acabou de mencionar; se a lembrança expirou, a mais recente
+    // que ela criou; e por último a em que está.
+    const lembrada = carteiraLembrada(phone);
+    if (lembrada && carteiras.includes(lembrada)) return lembrada;
+    return carteiras[carteiras.length - 1] || ativa;
+  }
+
+  const alvo = bruto.toLowerCase();
+  return carteiras.find((c) => c.toLowerCase() === alvo)
+    || carteiras.find((c) => c.toLowerCase().includes(alvo) || alvo.includes(c.toLowerCase()))
+    || null;
+}
+
 function nomeDeCarteira(bruto) {
   const limpo = String(bruto || '').trim().slice(0, 24);
   // "cria uma conta da empresa" chega como "empresa", e esse nome vira botão no
@@ -1139,13 +1193,14 @@ async function criarCarteira(phone, nome) {
   if (carteiras.length >= LIMITE_CARTEIRAS) return { erro: 'demais', carteiras };
 
   const lista = [...carteiras, limpo];
+  // Criar NÃO troca de contexto. Quem cria uma carteira nova costuma estar
+  // arrumando a casa, não mudando de assunto — e ser jogado pra outra carteira
+  // sem pedir faz o próximo lançamento cair no lugar errado em silêncio.
   const { error } = await supabaseAdmin
-    .from('users')
-    // Criar já entra nela: quem acabou de criar a carteira da empresa vai
-    // lançar algo da empresa em seguida, não voltar pra pessoal.
-    .update({ wallets: lista, active_wallet: limpo })
-    .eq('phone', phone);
+    .from('users').update({ wallets: lista }).eq('phone', phone);
   if (error) throw error;
+
+  lembrarCarteira(phone, limpo);
   return { nome: limpo, carteiras: lista };
 }
 
@@ -1160,6 +1215,7 @@ async function trocarCarteira(phone, nome) {
   const { error } = await supabaseAdmin
     .from('users').update({ active_wallet: alvo }).eq('phone', phone);
   if (error) throw error;
+  lembrarCarteira(phone, alvo);
   return { nome: alvo, carteiras };
 }
 
@@ -1188,6 +1244,7 @@ async function renomearCarteira(phone, de, para) {
     .update({ wallets: lista, active_wallet: ativa === alvo ? novo : ativa })
     .eq('phone', phone);
   if (error) throw error;
+  lembrarCarteira(phone, novo);
   return { de: alvo, para: novo, carteiras: lista };
 }
 
@@ -1228,10 +1285,10 @@ async function apagarCarteira(phone, nome) {
 // quando a pessoa só percebe depois. Sem isto, o jeito de consertar era apagar
 // e redigitar, e ninguém faz isso: deixa errado.
 async function moverUltimoParaCarteira(phone, destino) {
-  const { carteiras } = await contextoDeCarteira(phone);
-  const alvo = carteiras.find((c) => c.toLowerCase() === destino.toLowerCase())
-    || carteiras.find((c) => parecido(c, destino));
+  const { carteiras, ativa } = await contextoDeCarteira(phone);
+  const alvo = resolverCarteira(phone, destino, carteiras, ativa);
   if (!alvo) return { erro: 'nao_achei', carteiras };
+  lembrarCarteira(phone, alvo);
 
   const desde = new Date(Date.now() - JANELA_CONVERSAO_MS).toISOString();
   const ultimoDe = async (tabela, campos) => {
@@ -1277,6 +1334,8 @@ async function moverUltimoParaCarteira(phone, destino) {
 
 module.exports = {
   CARTEIRA_PADRAO,
+  resolverCarteira,
+  lembrarCarteira,
   LIMITE_CARTEIRAS,
   moverUltimoParaCarteira,
   comCarteira,

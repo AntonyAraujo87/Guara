@@ -345,8 +345,11 @@ export default function Home() {
     setCarteiras(json.carteiras);
     // Renomear a carteira em que se está muda o nome dela por baixo; sem isto
     // o painel ficaria apontando pra um nome que não existe mais.
+    //
+    // Criar NÃO troca: quem cria está arrumando a casa, não mudando de
+    // assunto, e ser jogado pra outra carteira sem pedir faz o próximo
+    // lançamento cair no lugar errado.
     setCarteira((atual) => (json.carteiras.includes(atual) ? atual : json.ativa));
-    if (acao === 'criar' && novoNome !== 'nao-entrar') setCarteira(json.ativa);
     return true;
   }
 

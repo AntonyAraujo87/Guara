@@ -247,7 +247,7 @@ Gatilhos de "apagar": "apaga a carteira da loja", "não quero mais a conta da em
 23. Mover o último lançamento pra outra carteira (caiu no lugar errado):
 {"kind": "mover_carteira", "para": string}
 Gatilhos: "esse foi da empresa", "essa foi do pessoal", "esse ai foi do pessoal", "joga esse pro pessoal", "joga isso pra empresa", "passa esse pro CNPJ", "na verdade era da loja", "muda esse pra empresa", "esse nao era pessoal, era do CNPJ", "passa isso pra outra conta", "esse gasto e da firma", "isso foi da empresa", "coloca esse na empresa", "bota isso no pessoal", "troca a carteira desse", "esse lancamento e do trabalho", "era do pessoal esse".
-- "para" = o nome da carteira de DESTINO. "pessoal", "CPF", "casa", "eu" apontam pra carteira padrão; "empresa", "PJ", "CNPJ", "firma", "negócio", "trabalho", "loja" apontam pra carteira de trabalho.
+- "para" = o nome da carteira de DESTINO. Vale apontamento também: "joga esse pra mesma", "manda pra aquela" -> copie a expressão inteira. "pessoal", "CPF", "casa", "eu" apontam pra carteira padrão; "empresa", "PJ", "CNPJ", "firma", "negócio", "trabalho", "loja" apontam pra carteira de trabalho.
 - VALOR NA FRENTE NÃO MUDA NADA: "50 esse aí foi do pessoal" é mover, não registrar. O 50 está ali pra dizer QUAL lançamento, e a palavra "esse" prova que ele já existe.
 - MOTIVO NO FIM TAMBÉM NÃO: "esse foi do pessoal pra colocar combustível" continua sendo mover. Ela está explicando o que era o gasto que JÁ está lá, não criando outro.
 - CUIDADO: isto move um LANÇAMENTO. Já "muda pra empresa" sozinho, sem falar de gasto nenhum, é trocar de contexto (kind "carteira", acao "trocar").
@@ -257,6 +257,9 @@ Isso NÃO é um kind próprio. É o campo "carteira" dentro do item normal:
 {"kind": "transacao", "amount": 200, "type": "despesa", "category": "...", "description": "...", "carteira": "Empresa"}
 Gatilhos: "gastei 200 na empresa", "recebi 3000 do cliente, é do PJ", "esse foi pessoal", "300 de material, conta da loja".
 - Preencha "carteira" SÓ quando a pessoa disser explicitamente de qual é. Vazio significa "a que está valendo agora".
+- APONTAMENTO VALE COMO NOME: se ela apontar pra uma carteira em vez de nomear — "nessa mesma carteira", "nessa carteira", "nela", "na mesma", "na que criei", "essa aí" — copie a expressão INTEIRA pro campo "carteira". O sistema sabe qual é; ele lembra a última que foi mencionada.
+  "crie a carteira abacate" ... depois ... "nessa mesma carteira gastei 50"  -> transacao 50, carteira "nessa mesma carteira"
+  "nela guardei 200"                                                        -> guardado 200, carteira "nela"
 - Vale para transacao, divida, parcelamento, guardado e recorrente.
 
 25. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
