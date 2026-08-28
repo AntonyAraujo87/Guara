@@ -135,22 +135,29 @@ IMPORTANTE: "guardei 200" NUNCA é despesa. É sempre kind "guardado".
 - Se a pessoa não citar nenhum nome, deixe jar como string vazia.
 
 6. Meta (a pessoa quer definir um objetivo de quanto guardar):
-{"kind": "meta", "monthlyTarget": number, "goalName": string, "goalTarget": number}
-Gatilhos: "quero guardar 200 por mês", "minha meta é juntar 500 todo mês", "quero juntar 5000 pra viagem", "meta de 1000 pra comprar um notebook".
+{"kind": "meta", "monthlyTarget": number, "goalName": string, "goalTarget": number, "goalDeadline": string}
+Gatilhos: "quero guardar 200 por mês", "minha meta é juntar 500 todo mês", "quero juntar 5000 pra viagem", "meta de 1000 pra comprar um notebook", "preciso juntar 5 mil até novembro".
 - monthlyTarget = quanto por MÊS. Use 0 se a pessoa não falou de valor mensal.
 - goalName + goalTarget = objetivo maior com nome (ex: "viagem", 5000). Use string vazia e 0 se não houver.
+- goalDeadline = a DATA LIMITE no formato "AAAA-MM-DD", quando ela disser até quando. "até novembro" = último dia de novembro (use a data de hoje, no fim deste prompt, pra saber o ano: mês que já passou é do ano que vem). "em 6 meses" = hoje mais 6 meses. "até o fim do ano" = 31 de dezembro. Sem prazo dito, string vazia.
+- PRAZO NÃO É NOME: em "juntar 5 mil até novembro", novembro é o PRAZO e o goalName fica vazio. Já em "juntar 5000 pra viagem", viagem é o nome. Se ela disser os dois — "5 mil pra viagem até dezembro" — preencha os dois campos.
 
-7. Ajuda (a pessoa quer saber o que você faz ou como usar):
+7. Planejar a meta (a pessoa quer saber quanto guardar por período pra chegar lá):
+{"kind": "planejar"}
+Gatilhos: "planeje quanto economizar por mês para atingir a meta", "quanto preciso guardar por mês", "quanto tenho que juntar por mês pra bater a meta", "me ajuda a chegar na meta", "monta um plano pra minha meta", "quanto por semana pra conseguir", "dá pra chegar até lá?", "como faço pra bater a meta".
+- É PERGUNTA, não registro: ela não está definindo meta nenhuma, está pedindo a conta. Se ela disser um valor novo junto ("quero juntar 8 mil, quanto por mês?"), aí são DOIS itens: uma "meta" e um "planejar".
+
+8. Ajuda (a pessoa quer saber o que você faz ou como usar):
 {"kind": "ajuda"}
 Gatilhos: "ajuda", "o que você faz", "como funciona", "como usar", "quais comandos", "me ajuda", "?".
 
-8. Recorrente (um gasto ou recebimento que se repete TODO MÊS, sempre igual):
+9. Recorrente (um gasto ou recebimento que se repete TODO MÊS, sempre igual):
 {"kind": "recorrente", "description": string, "amount": number, "type": "despesa" | "receita", "category": string, "dayOfMonth": number}
 Gatilhos: "todo mês pago 50 de netflix", "todo dia 10 pago 1200 de aluguel", "mensalidade da academia 90", "recebo 3000 de salário todo dia 5", "assinatura de 30 por mês".
 - dayOfMonth = dia do mês em que cai. Se a pessoa não disser, use 1.
 - ATENÇÃO: só use "recorrente" se a frase indicar REPETIÇÃO ("todo mês", "todo dia X", "mensalidade", "assinatura", "por mês"). Um gasto que aconteceu uma vez é "transacao", nunca "recorrente".
 
-9. Editar recorrente (a pessoa quer corrigir um gasto/recebimento mensal que já cadastrou):
+10. Editar recorrente (a pessoa quer corrigir um gasto/recebimento mensal que já cadastrou):
 {"kind": "editar_recorrente", "description": string, "dayOfMonth": number, "amount": number, "escopo": "um" | "lote" | "todos"}
 Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora é 1300", "corrige a Netflix pra 55", "mudou pro dia 20", "esses últimos são todos dia 5".
 - description = qual recorrente mudar, se a pessoa citar (ex: "salário", "aluguel"). Se ela não disser qual, deixe string vazia.
@@ -164,7 +171,7 @@ Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora 
 - amount = novo valor, se ela citar. Use 0 se não mencionar valor.
 - Frases curtas de correção logo após cadastrar algo ("na verdade é dia 5", "era 200") são SEMPRE editar_recorrente, nunca uma transação nova.
 
-10. Parcela paga (a pessoa avisa que quitou uma parcela):
+11. Parcela paga (a pessoa avisa que quitou uma parcela):
 {"kind": "parcela_paga", "description": string}
 Gatilhos: "paguei a parcela da TV", "quitei a parcela do celular", "paguei a parcela desse mês", "parcela paga".
 - ADIANTAR também é pagar: "adiantar a primeira parcela do secador", "antecipei a parcela do sofá", "vou adiantar duas do celular", "quitar a parcela". O verbo muda, o fato é o mesmo — a parcela foi paga.
@@ -172,15 +179,15 @@ Gatilhos: "paguei a parcela da TV", "quitei a parcela do celular", "paguei a par
 - VALOR NA FRASE NÃO VIRA GASTO NOVO: "pagar 50 reais do secador", "paguei 200 da TV", "mandei 50 pro sofá" são parcela_paga quando a coisa citada é algo parcelado. O valor só confirma qual é — a parcela já tem preço cadastrado. Anotar como transação nova cobraria a pessoa duas vezes.
 - description é o nome da compra, se a pessoa citar (ex: "TV", "secador"). Deixe string vazia se ela não disser qual.
 
-11. Instalar (a pessoa quer o app no celular, ou pergunta se existe app):
+12. Instalar (a pessoa quer o app no celular, ou pergunta se existe app):
 {"kind": "instalar"}
 Gatilhos: "tem app?", "como instalo", "quero o app no celular", "tem pra baixar", "onde baixo", "tem aplicativo", "quero na tela inicial", "manda o link do app", "da pra instalar".
 
-12. Mover o último guardado de cofrinho (a pessoa responde só o NOME de um cofrinho, ou diz que era em outro):
+13. Mover o último guardado de cofrinho (a pessoa responde só o NOME de um cofrinho, ou diz que era em outro):
 {"kind": "mover_guardado", "jar": string}
 Gatilhos: uma mensagem que é só um nome logo depois de guardar ("Secador", "Viagem", "geral"), "na verdade era no cofrinho da viagem", "põe no secador", "muda pro geral".
 
-13. Converter o último (a pessoa diz que o que ACABOU de registrar é, na verdade, parcelado ou mensal):
+14. Converter o último (a pessoa diz que o que ACABOU de registrar é, na verdade, parcelado ou mensal):
 {"kind": "converter_ultimo", "para": "parcelamento" | "recorrente", "installments": number, "dayOfMonth": number, "amount": number}
 Gatilhos de PARCELAMENTO: "está parcelado", "isso é parcelado", "esse é em 6x", "parcelei esse", "dividi em 3", "essa conta é parcelada", "em 10 vezes", "é em 12x", "6x", "3 vezes".
 Gatilhos de RECORRENTE: "isso é todo mês", "essa conta é mensal", "é fixo", "vem todo mês", "todo mês tem essa", "é recorrente", "essa é sempre".
@@ -192,7 +199,7 @@ Gatilhos de RECORRENTE: "isso é todo mês", "essa conta é mensal", "é fixo", 
 - NÃO confunda com "parcela_paga": "está parcelado" fala do que a conta É; "paguei a parcela" fala de um pagamento que ACONTECEU.
 - NÃO confunda com "parcelamento": aquele registra uma compra NOVA com valor e vezes na mesma frase ("comprei uma TV em 6x de 200"). Este aqui só reclassifica algo que já foi anotado.
 
-14. Editar um lançamento já registrado (corrigir valor, categoria ou nome de algo que JÁ foi anotado):
+15. Editar um lançamento já registrado (corrigir valor, categoria ou nome de algo que JÁ foi anotado):
 {"kind": "editar_lancamento", "description": string, "amount": number, "category": string, "novaDescricao": string}
 Gatilhos: "aquele mercado era 45", "muda o uber pra 30", "o almoço foi 25 e nao 35", "corrige a gasolina pra 180", "aquele gasto do mercado era na verdade farmacia".
 - description = como achar o lançamento (o nome que ela usou).
@@ -201,39 +208,39 @@ Gatilhos: "aquele mercado era 45", "muda o uber pra 30", "o almoço foi 25 e nao
 - novaDescricao = o nome novo, se ela renomear. Vazio se não.
 - NÃO confunda com editar_recorrente: aqui é um gasto solto que já aconteceu; lá é uma conta que se repete todo mês.
 
-15. Apagar UM item específico (não é o último, e não é a conta inteira):
+16. Apagar UM item específico (não é o último, e não é a conta inteira):
 {"kind": "apagar_item", "tipo": "lancamento" | "divida" | "recorrente" | "parcelamento" | "guardado", "description": string}
 Gatilhos: "apaga o gasto do mercado", "remove aquele uber", "cancela a Netflix" (tipo recorrente), "cancela o parcelamento da TV" (tipo parcelamento), "apaga a dívida do João" (tipo divida), "tira aqueles 200 que guardei" (tipo guardado).
 - "cancela"/"cancelar" + serviço mensal = tipo "recorrente". "cancela" + compra parcelada = tipo "parcelamento".
 - description = o nome do que ela quer apagar. Vazio se ela não disser qual.
 
-16. Quitar dívida (o combinado finalmente virou dinheiro de verdade):
+17. Quitar dívida (o combinado finalmente virou dinheiro de verdade):
 {"kind": "quitar_divida", "description": string}
 Gatilhos: "o João me pagou", "a Maria quitou", "paguei o que devia pro Pedro", "recebi do João aquele dinheiro", "quitei a dívida".
 - description = o nome da pessoa, se ela citar.
 - NÃO confunda com parcela_paga, que é sobre compra parcelada, não sobre dívida com pessoa.
 
-17. Desmarcar parcela (ela avisou que pagou, mas não pagou):
+18. Desmarcar parcela (ela avisou que pagou, mas não pagou):
 {"kind": "desmarcar_parcela", "description": string}
 Gatilhos: "não paguei aquela parcela", "marquei errado a parcela da TV", "desmarca a parcela do sofá", "na verdade não paguei".
 
-18. Renomear cofrinho:
+19. Renomear cofrinho:
 {"kind": "renomear_cofrinho", "de": string, "para": string}
 Gatilhos: "muda o nome do cofrinho viagem pra férias", "renomeia o secador pra casa", "o cofrinho X agora chama Y".
 
-19. Categoria (criar ou apagar uma categoria própria):
+20. Categoria (criar ou apagar uma categoria própria):
 {"kind": "categoria", "acao": "criar" | "apagar", "nome": string}
 Gatilhos: "cria a categoria Pets", "quero uma categoria pra academia", "apaga a categoria Viagem", "remove a categoria X".
 
-20. Planilha (a pessoa quer os dados dela em arquivo):
+21. Planilha (a pessoa quer os dados dela em arquivo):
 {"kind": "planilha"}
 Gatilhos: "me manda a planilha", "quero exportar", "tem como baixar meus dados", "manda em excel", "exportar tudo".
 
-21. Resumo por categoria (ela quer ver pra onde o dinheiro foi, o que no painel é o gráfico):
+22. Resumo por categoria (ela quer ver pra onde o dinheiro foi, o que no painel é o gráfico):
 {"kind": "resumo", "period": "mes" | "mes_passado" | "semana" | "tudo"}
 Gatilhos: "pra onde foi meu dinheiro", "resumo do mês", "gastei mais com o quê", "me mostra por categoria", "meu relatório".
 
-22. Carteira (a pessoa quer separar o dinheiro pessoal do dinheiro do trabalho):
+23. Carteira (a pessoa quer separar o dinheiro pessoal do dinheiro do trabalho):
 {"kind": "carteira", "acao": "criar" | "trocar" | "listar" | "renomear" | "apagar", "nome": string, "novoNome": string}
 Gatilhos de "criar": "cria uma conta da empresa", "quero separar o dinheiro da empresa", "cria uma carteira pro meu PJ", "quero uma conta pro trabalho", "separa o pessoal do profissional".
 Gatilhos de "trocar": "muda pra empresa", "vamos pro PJ", "volta pro pessoal", "agora é da loja", "entra na carteira da empresa".
@@ -244,7 +251,7 @@ Gatilhos de "apagar": "apaga a carteira da loja", "não quero mais a conta da em
 - nome = o nome da carteira. Em "renomear", nome é a atual e novoNome é a nova.
 - CUIDADO: "conta de luz", "conta do mercado", "minha conta mensal" NÃO são carteira — são despesa ou recorrente. Carteira é sobre SEPARAR dinheiro em grupos, não sobre pagar algo.
 
-23. Mover o último lançamento pra outra carteira (caiu no lugar errado):
+24. Mover o último lançamento pra outra carteira (caiu no lugar errado):
 {"kind": "mover_carteira", "para": string}
 Gatilhos: "esse foi da empresa", "essa foi do pessoal", "esse ai foi do pessoal", "joga esse pro pessoal", "joga isso pra empresa", "passa esse pro CNPJ", "na verdade era da loja", "muda esse pra empresa", "esse nao era pessoal, era do CNPJ", "passa isso pra outra conta", "esse gasto e da firma", "isso foi da empresa", "coloca esse na empresa", "bota isso no pessoal", "troca a carteira desse", "esse lancamento e do trabalho", "era do pessoal esse".
 - "para" = o nome da carteira de DESTINO. Vale apontamento também: "joga esse pra mesma", "manda pra aquela" -> copie a expressão inteira. "pessoal", "CPF", "casa", "eu" apontam pra carteira padrão; "empresa", "PJ", "CNPJ", "firma", "negócio", "trabalho", "loja" apontam pra carteira de trabalho.
@@ -252,7 +259,7 @@ Gatilhos: "esse foi da empresa", "essa foi do pessoal", "esse ai foi do pessoal"
 - MOTIVO NO FIM TAMBÉM NÃO: "esse foi do pessoal pra colocar combustível" continua sendo mover. Ela está explicando o que era o gasto que JÁ está lá, não criando outro.
 - CUIDADO: isto move um LANÇAMENTO. Já "muda pra empresa" sozinho, sem falar de gasto nenhum, é trocar de contexto (kind "carteira", acao "trocar").
 
-24. Lançar em outra carteira sem trocar de contexto (a pessoa diz de qual dinheiro é, no meio do lançamento):
+25. Lançar em outra carteira sem trocar de contexto (a pessoa diz de qual dinheiro é, no meio do lançamento):
 Isso NÃO é um kind próprio. É o campo "carteira" dentro do item normal:
 {"kind": "transacao", "amount": 200, "type": "despesa", "category": "...", "description": "...", "carteira": "Empresa"}
 Gatilhos: "gastei 200 na empresa", "recebi 3000 do cliente, é do PJ", "esse foi pessoal", "300 de material, conta da loja".
@@ -262,13 +269,13 @@ Gatilhos: "gastei 200 na empresa", "recebi 3000 do cliente, é do PJ", "esse foi
   "nela guardei 200"                                                        -> guardado 200, carteira "nela"
 - Vale para transacao, divida, parcelamento, guardado e recorrente.
 
-25. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
+26. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
 {"kind": "apagar_dados", "confirmado": boolean}
 Gatilhos: "quero apagar meus dados", "apaga tudo", "quero excluir minha conta", "quero sair e apagar tudo", "me tira do sistema", "deleta tudo que voce tem de mim".
 - confirmado = true APENAS se a mensagem for exatamente a palavra de confirmação "APAGAR TUDO" (em maiúsculas ou não). Em qualquer outro caso, false.
 - CUIDADO com a diferença: "apaga o último" é kind "desfazer" (um lançamento só). "apaga tudo" é kind "apagar_dados" (a conta inteira). Se a frase citar UM item ou "o último", é sempre desfazer.
 
-26. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+27. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -808,6 +815,9 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
         }
+        if (item.kind === 'planejar') {
+          return { kind: 'planejar' };
+        }
         if (item.kind === 'conversa') {
           return { kind: 'conversa' };
         }
@@ -930,6 +940,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             monthlyTarget: Number(item.monthlyTarget) || 0,
             goalName: item.goalName || '',
             goalTarget: Number(item.goalTarget) || 0,
+            goalDeadline: /^\d{4}-\d{2}-\d{2}$/.test(String(item.goalDeadline || '')) ? item.goalDeadline : '',
           };
         }
         if (item.kind === 'consulta') {

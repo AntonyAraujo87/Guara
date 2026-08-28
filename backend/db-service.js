@@ -743,7 +743,7 @@ async function getGoal(phone, carteira = carteiraAtual()) {
   return data || null;
 }
 
-async function saveGoal(phone, { monthlyTarget, goalName, goalTarget }, carteira = carteiraAtual()) {
+async function saveGoal(phone, { monthlyTarget, goalName, goalTarget, goalDeadline }, carteira = carteiraAtual()) {
   const atual = await getGoal(phone, carteira);
   const registro = {
     user_phone: phone,
@@ -752,6 +752,7 @@ async function saveGoal(phone, { monthlyTarget, goalName, goalTarget }, carteira
     monthly_target: monthlyTarget > 0 ? monthlyTarget : atual?.monthly_target ?? null,
     goal_name: goalName || atual?.goal_name || null,
     goal_target: goalTarget > 0 ? goalTarget : atual?.goal_target ?? null,
+    goal_deadline: goalDeadline || atual?.goal_deadline || null,
     updated_at: new Date().toISOString(),
   };
   const { error } = await supabaseAdmin.from('goals').upsert(registro, { onConflict: 'user_phone,wallet' });
@@ -1300,8 +1301,70 @@ async function moverUltimoParaCarteira(phone, destino) {
   return { de: reg.wallet, para: alvo, reg, tabela };
 }
 
+// Quanto guardar por mês pra chegar na meta no prazo.
+//
+// A conta é simples; o valor está em fazê-la com os números certos. Ela
+// desconta o que a pessoa JÁ guardou (senão o plano manda juntar de novo o que
+// já está lá) e olha o quanto ela vem guardando de verdade nos últimos meses,
+// que é o que diz se o plano é possível ou fantasia.
+async function planoDaMeta(phone, carteira = carteiraAtual()) {
+  const [meta, cofre] = await Promise.all([
+    getGoal(phone, carteira),
+    savingsSummary(phone, carteira),
+  ]);
+
+  const alvo = Number(meta?.goal_target) || 0;
+  if (!meta || alvo <= 0) return { erro: 'sem_meta', meta };
+
+  const guardado = Number(cofre?.total) || 0;
+  const falta = Math.max(0, alvo - guardado);
+
+  if (!meta.goal_deadline) {
+    return { erro: 'sem_prazo', meta, guardado, falta, alvo };
+  }
+
+  // Dias inteiros até o prazo, contados no fuso de Brasília pra não virar o dia
+  // uma hora antes por causa do UTC.
+  const hoje = agoraBR();
+  const inicio = Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate());
+  const [ano, mes, dia] = String(meta.goal_deadline).split('-').map(Number);
+  const fim = Date.UTC(ano, mes - 1, dia);
+  const dias = Math.round((fim - inicio) / 86_400_000);
+
+  if (dias < 0) return { erro: 'prazo_passou', meta, guardado, falta, alvo, dias };
+
+  // Meses "de calendário" arredondados pra cima: quem tem 40 dias tem dois
+  // depósitos pela frente, não 1,3. Mínimo 1 pra não dividir por zero.
+  const meses = Math.max(1, Math.ceil(dias / 30));
+  const porMes = falta / meses;
+
+  // O que ela vem guardando de fato: média dos últimos 90 dias. Serve pra
+  // dizer se o plano cabe na vida dela ou se é conta no papel.
+  const desde = new Date(Date.now() - 90 * 86_400_000).toISOString();
+  const { data: recentes } = await supabaseAdmin
+    .from('savings')
+    .select('amount, created_at')
+    .eq('user_phone', phone)
+    .eq('wallet', carteira)
+    .eq('direction', 'guardar')
+    .gte('created_at', desde);
+
+  const guardadoNoTrimestre = (recentes || []).reduce((s, r) => s + Math.abs(Number(r.amount)), 0);
+  const ritmoAtual = guardadoNoTrimestre / 3;
+
+  return {
+    meta, alvo, guardado, falta, dias, meses, porMes,
+    porSemana: falta / Math.max(1, Math.ceil(dias / 7)),
+    porDia: falta / Math.max(1, dias),
+    ritmoAtual,
+    // Não é opinião: é a divisão que a pessoa faria no papel.
+    alcancavel: ritmoAtual >= porMes,
+  };
+}
+
 module.exports = {
   CARTEIRA_PADRAO,
+  planoDaMeta,
   resolverCarteira,
   lembrarCarteira,
   LIMITE_CARTEIRAS,

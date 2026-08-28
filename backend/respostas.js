@@ -19,6 +19,7 @@ const {
   savingsSummary,
   savingsByJar,
   getGoal,
+  planoDaMeta,
   saveGoal,
   getCategories,
   markInstallmentPaid,
@@ -210,6 +211,96 @@ async function responderDesfazer(phone) {
   return `↩️ *Apaguei:*\n${linha}\n\nPode mandar de novo do jeito certo. 😉`;
 }
 
+// "2026-11-30" -> "30 de novembro". Data crua no meio de uma frase em
+// português parece erro de sistema.
+function formatarData(iso) {
+  const [ano, mes, dia] = String(iso).split('-').map(Number);
+  const hoje = new Date();
+  const mesmoAno = ano === hoje.getFullYear();
+  return `${dia} de ${nomeDoMes(`${ano}-${String(mes).padStart(2, '0')}-01`).split('/')[0]}${mesmoAno ? '' : ` de ${ano}`}`;
+}
+
+// "Quanto preciso guardar por mês pra bater a meta?"
+//
+// A conta é uma divisão. O que faz ela valer alguma coisa é o contexto em
+// volta: descontar o que já foi guardado, quebrar em semana e dia (porque
+// R$ 1.250 por mês assusta e R$ 42 por dia não), e comparar com o ritmo real
+// dos últimos 90 dias — que é o que separa um plano de um número bonito.
+async function responderPlanejar(phone) {
+  const p = await planoDaMeta(phone);
+
+  if (p.erro === 'sem_meta') {
+    return [
+      'Você ainda não tem uma meta pra eu planejar. 🎯',
+      '',
+      'Me conta o objetivo que eu monto a conta:',
+      '_"quero juntar 5000 até dezembro"_',
+    ].join(NL);
+  }
+
+  if (p.erro === 'sem_prazo') {
+    const falta = `R$ ${currency.format(p.falta)}`;
+    return [
+      `🎯 Sua meta é juntar *R$ ${currency.format(p.alvo)}*${p.meta.goal_name ? ` pra ${p.meta.goal_name}` : ''}.`,
+      `Você já tem R$ ${currency.format(p.guardado)}, então faltam *${falta}*.`,
+      '',
+      '*Até quando você quer chegar lá?*',
+      'Me diz e eu monto o plano — tipo: _"até dezembro"_ ou _"em 6 meses"_.',
+    ].join(NL);
+  }
+
+  if (p.erro === 'prazo_passou') {
+    return [
+      `⏰ O prazo dessa meta já passou (${formatarData(p.meta.goal_deadline)}).`,
+      '',
+      p.falta <= 0
+        ? `E você conseguiu: juntou R$ ${currency.format(p.guardado)}. 🎉`
+        : `Faltaram R$ ${currency.format(p.falta)}. Quer marcar um prazo novo? Me diz _"até dezembro"_.`,
+    ].join(NL);
+  }
+
+  if (p.falta <= 0) {
+    return [
+      '🎉 *Você já bateu a meta!*',
+      '',
+      `Objetivo: R$ ${currency.format(p.alvo)}`,
+      `Você tem: *R$ ${currency.format(p.guardado)}*`,
+      '',
+      `E ainda faltam ${p.dias} dias pro prazo. 👏`,
+    ].join(NL);
+  }
+
+  const partes = [
+    '🎯 *Seu plano pra bater a meta*',
+    '',
+    `Objetivo: R$ ${currency.format(p.alvo)}${p.meta.goal_name ? ` — ${p.meta.goal_name}` : ''}`,
+    `Já guardado: R$ ${currency.format(p.guardado)}`,
+    `*Falta: R$ ${currency.format(p.falta)}* em ${p.dias} dias`,
+    '',
+    `📅 *R$ ${currency.format(p.porMes)} por mês*`,
+    `   ou R$ ${currency.format(p.porSemana)} por semana`,
+    `   ou R$ ${currency.format(p.porDia)} por dia`,
+  ];
+
+  // O ritmo real vale mais que o plano. Dizer só "guarde X" pra quem guarda
+  // metade disso é dar uma conta que não vai acontecer.
+  if (p.ritmoAtual > 0) {
+    partes.push('', `_Nos últimos 3 meses você guardou R$ ${currency.format(p.ritmoAtual)} por mês._`);
+    if (p.alcancavel) {
+      partes.push('No seu ritmo atual, dá pra chegar. 💪');
+    } else {
+      const aMais = p.porMes - p.ritmoAtual;
+      partes.push(`Pra bater o prazo, precisa de R$ ${currency.format(aMais)} a mais por mês.`);
+      // Alternativa honesta: em vez de só cobrar, mostra o outro caminho.
+      const mesesNoRitmo = Math.ceil(p.falta / p.ritmoAtual);
+      partes.push(`_Mantendo o ritmo de hoje, você chegaria em ${mesesNoRitmo} ${mesesNoRitmo === 1 ? 'mês' : 'meses'}._`);
+    }
+  }
+
+  partes.push('', 'Quando guardar, me fala: _"guardei 200"_ 🐷');
+  return partes.join(NL);
+}
+
 async function responderMeta(phone, item) {
   if (item.monthlyTarget <= 0 && item.goalTarget <= 0) {
     return 'Não entendi o valor da meta. 🤔\nTenta assim: _"quero guardar 200 por mês"_ ou _"quero juntar 5000 pra viagem"_.';
@@ -225,8 +316,21 @@ async function responderMeta(phone, item) {
   if (Number(salva.goal_target) > 0) {
     const pct = Math.min(100, Math.round((total / Number(salva.goal_target)) * 100));
     partes.push(`🏁 Juntar *R$ ${currency.format(Number(salva.goal_target))}*${salva.goal_name ? ` pra ${salva.goal_name}` : ''}.`);
+    if (salva.goal_deadline) partes.push(`📆 Até ${formatarData(salva.goal_deadline)}.`);
     partes.push(`Você já tem R$ ${currency.format(total)} (${pct}%).`);
   }
+
+  // Com prazo e valor, a conta já dá pra fazer — e é a primeira coisa que a
+  // pessoa quer saber depois de marcar uma meta.
+  if (salva.goal_deadline && Number(salva.goal_target) > 0) {
+    const p = await planoDaMeta(phone);
+    if (!p.erro && p.falta > 0) {
+      partes.push('', `📅 Dá *R$ ${currency.format(p.porMes)} por mês* — ou R$ ${currency.format(p.porDia)} por dia.`);
+    }
+  } else if (Number(salva.goal_target) > 0 && !salva.goal_deadline) {
+    partes.push('', '_Me diz até quando (tipo "até dezembro") que eu monto o plano._');
+  }
+
   partes.push('', 'Quando guardar, é só me falar: _"guardei 200"_ 🐷');
   return partes.join('\n');
 }
@@ -828,6 +932,7 @@ async function salvarParcelamento(phone, item) {
 }
 
 module.exports = {
+  responderPlanejar,
   responderConsulta,
   responderDesfazer,
   responderMeta,

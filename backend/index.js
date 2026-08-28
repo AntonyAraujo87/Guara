@@ -36,6 +36,7 @@ const {
   responderConsulta,
   responderDesfazer,
   responderMeta,
+  responderPlanejar,
   responderParcelaPaga,
   responderConverter,
   responderRecorrente,
@@ -371,6 +372,11 @@ async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) 
     const respostas = [];
     for (const c of consultas) respostas.push(await responderConsulta(phone, c));
     await replyWhatsApp(phone, respostas.join('\n\n'));
+    return;
+  }
+
+  if (intencao === 'planejar') {
+    await replyWhatsApp(phone, await responderPlanejar(phone));
     return;
   }
 
