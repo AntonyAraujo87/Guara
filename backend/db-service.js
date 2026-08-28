@@ -1198,8 +1198,61 @@ async function apagarCarteira(phone, nome) {
   return { nome: alvo, movidos, carteiras: lista };
 }
 
+// Move o último lançamento pra outra carteira. É a correção de "caiu no lugar
+// errado" — que acontece quando a frase não deixou claro de qual era, ou
+// quando a pessoa só percebe depois. Sem isto, o jeito de consertar era apagar
+// e redigitar, e ninguém faz isso: deixa errado.
+async function moverUltimoParaCarteira(phone, destino) {
+  const { carteiras } = await contextoDeCarteira(phone);
+  const alvo = carteiras.find((c) => c.toLowerCase() === destino.toLowerCase())
+    || carteiras.find((c) => parecido(c, destino));
+  if (!alvo) return { erro: 'nao_achei', carteiras };
+
+  const desde = new Date(Date.now() - JANELA_CONVERSAO_MS).toISOString();
+  const ultimoDe = async (tabela, campos) => {
+    const { data } = await supabaseAdmin
+      .from(tabela)
+      .select(campos)
+      .eq('user_phone', phone)
+      .gte('created_at', desde)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    return data?.[0] || null;
+  };
+
+  const [transacao, poupanca, divida, parcela] = await Promise.all([
+    ultimoDe('transactions', 'id, created_at, amount, description, wallet'),
+    ultimoDe('savings', 'id, created_at, amount, description, wallet'),
+    ultimoDe('debts', 'id, created_at, amount, person, description, wallet'),
+    ultimoDe('installments', 'id, created_at, purchase_id, amount, description, wallet'),
+  ]);
+
+  const candidatos = [
+    transacao && { tabela: 'transactions', reg: transacao },
+    poupanca && { tabela: 'savings', reg: poupanca },
+    divida && { tabela: 'debts', reg: divida },
+    parcela && { tabela: 'installments', reg: parcela },
+  ].filter(Boolean);
+  if (candidatos.length === 0) return { erro: 'nada_recente', carteiras };
+
+  candidatos.sort((a, b) => new Date(b.reg.created_at) - new Date(a.reg.created_at));
+  const { tabela, reg } = candidatos[0];
+  if (reg.wallet === alvo) return { jaEstava: true, alvo, reg };
+
+  // Parcelamento move a compra inteira: metade das parcelas numa carteira e
+  // metade na outra não descreve nada que exista no mundo.
+  const consulta = supabaseAdmin.from(tabela).update({ wallet: alvo });
+  const { error } = tabela === 'installments'
+    ? await consulta.eq('purchase_id', reg.purchase_id)
+    : await consulta.eq('id', reg.id);
+  if (error) throw error;
+
+  return { de: reg.wallet, para: alvo, reg, tabela };
+}
+
 module.exports = {
   CARTEIRA_PADRAO,
+  moverUltimoParaCarteira,
   comCarteira,
   carteiraAtual,
   contextoDeCarteira,

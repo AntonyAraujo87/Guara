@@ -175,20 +175,26 @@ Gatilhos de "apagar": "apaga a carteira da loja", "não quero mais a conta da em
 - nome = o nome da carteira. Em "renomear", nome é a atual e novoNome é a nova.
 - CUIDADO: "conta de luz", "conta do mercado", "minha conta mensal" NÃO são carteira — são despesa ou recorrente. Carteira é sobre SEPARAR dinheiro em grupos, não sobre pagar algo.
 
-23. Lançar em outra carteira sem trocar de contexto (a pessoa diz de qual dinheiro é, no meio do lançamento):
+23. Mover o último lançamento pra outra carteira (caiu no lugar errado):
+{"kind": "mover_carteira", "para": string}
+Gatilhos: "esse foi da empresa", "joga esse pro pessoal", "na verdade era da loja", "muda esse pra empresa", "esse nao era pessoal, era do CNPJ", "passa isso pra outra conta".
+- "para" = o nome da carteira de DESTINO.
+- CUIDADO: isto move um LANÇAMENTO. Já "muda pra empresa" sozinho, sem falar de gasto nenhum, é trocar de contexto (kind "carteira", acao "trocar").
+
+24. Lançar em outra carteira sem trocar de contexto (a pessoa diz de qual dinheiro é, no meio do lançamento):
 Isso NÃO é um kind próprio. É o campo "carteira" dentro do item normal:
 {"kind": "transacao", "amount": 200, "type": "despesa", "category": "...", "description": "...", "carteira": "Empresa"}
 Gatilhos: "gastei 200 na empresa", "recebi 3000 do cliente, é do PJ", "esse foi pessoal", "300 de material, conta da loja".
 - Preencha "carteira" SÓ quando a pessoa disser explicitamente de qual é. Vazio significa "a que está valendo agora".
 - Vale para transacao, divida, parcelamento, guardado e recorrente.
 
-24. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
+25. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
 {"kind": "apagar_dados", "confirmado": boolean}
 Gatilhos: "quero apagar meus dados", "apaga tudo", "quero excluir minha conta", "quero sair e apagar tudo", "me tira do sistema", "deleta tudo que voce tem de mim".
 - confirmado = true APENAS se a mensagem for exatamente a palavra de confirmação "APAGAR TUDO" (em maiúsculas ou não). Em qualquer outro caso, false.
 - CUIDADO com a diferença: "apaga o último" é kind "desfazer" (um lançamento só). "apaga tudo" é kind "apagar_dados" (a conta inteira). Se a frase citar UM item ou "o último", é sempre desfazer.
 
-25. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+26. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -518,6 +524,9 @@ async function extractItems(rawText, categoriasExtras = []) {
         }
         if (item.kind === 'conversa') {
           return { kind: 'conversa' };
+        }
+        if (item.kind === 'mover_carteira') {
+          return { kind: 'mover_carteira', para: (item.para || '').trim() };
         }
         if (item.kind === 'carteira') {
           const ACOES = ['criar', 'trocar', 'listar', 'renomear', 'apagar'];

@@ -32,6 +32,7 @@ const {
   apagarTudoDoTelefone,
   converterUltimoEmParcelamento,
   moverUltimoGuardado,
+  moverUltimoParaCarteira,
   CARTEIRA_PADRAO,
   comCarteira,
   contextoDeCarteira,
@@ -256,6 +257,7 @@ Manda foto do comprovante, nota ou print do PIX
 "cria uma carteira da empresa"
 "muda pra empresa"
 "gastei 200 na empresa"
+"esse foi da empresa" _(move o último)_
 "quais minhas carteiras"
 
 *📗 Levar seus dados*
@@ -451,6 +453,11 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
   // pra um "valeu" faz o Guará parecer burro.
   if (intencao === 'conversa') {
     await replyWhatsApp(phone, MSG_CONVERSA);
+    return;
+  }
+
+  if (intencao === 'mover_carteira') {
+    await replyWhatsApp(phone, await responderMoverCarteira(phone, items[0], carteiraAtiva));
     return;
   }
 
@@ -919,6 +926,32 @@ async function perguntaDeAssinatura(phone, saved) {
 
 function listaDeCarteiras(carteiras, ativa) {
   return carteiras.map((c) => (c === ativa ? `• *${c}* ← você está aqui` : `• ${c}`)).join(NL);
+}
+
+// "Esse foi da empresa" logo depois de lançar. Sem isto, consertar exigia
+// apagar e redigitar — e ninguém faz isso, deixa errado.
+async function responderMoverCarteira(phone, item, ativa) {
+  if (!item.para) {
+    const { carteiras } = await contextoDeCarteira(phone);
+    return ['Pra qual carteira?', '', listaDeCarteiras(carteiras, ativa)].join(NL);
+  }
+
+  const r = await moverUltimoParaCarteira(phone, item.para);
+  if (r.erro === 'nao_achei') {
+    return ['Não achei essa carteira. 🤔 Você tem:', '', listaDeCarteiras(r.carteiras, ativa)].join(NL);
+  }
+  if (r.erro === 'nada_recente') {
+    return 'Não achei nenhum lançamento recente pra mover. 🤔';
+  }
+  if (r.jaEstava) return `Esse já está na *${r.alvo}*. 👛`;
+
+  const nome = r.reg.description || r.reg.person || 'o lançamento';
+  return [
+    '👛 *Movido!*',
+    '',
+    `${nome} — R$ ${currency.format(Number(r.reg.amount))}`,
+    `${r.de} → *${r.para}*`,
+  ].join(NL);
 }
 
 async function responderCarteira(phone, item, ativa) {
