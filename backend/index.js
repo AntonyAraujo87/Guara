@@ -30,6 +30,13 @@ const {
   apagarTudoDoTelefone,
   converterUltimoEmParcelamento,
   moverUltimoGuardado,
+  desmarcarParcela,
+  quitarDivida,
+  apagarItem,
+  editarLancamento,
+  renomearCofrinho,
+  criarCategoria,
+  apagarCategoria,
   converterUltimoEmRecorrente,
   supabaseAdmin,
 } = require('./db-service');
@@ -108,6 +115,19 @@ O Guará já funciona pelo navegador — é só abrir o link e usar:
 
 Funciona igual dos dois jeitos. 😉`;
 
+// A planilha sai do painel, não daqui: o arquivo é montado no navegador com os
+// dados que já estão na tela. Mandar por WhatsApp exigiria gerar o arquivo no
+// servidor e subir como mídia — e a pessoa ia receber um anexo que o WhatsApp
+// abre mal. O link resolve, e ainda deixa ela escolher o mês.
+const MSG_PLANILHA = `📗 *Sua planilha está no painel*
+
+Abre aqui e toca em *Baixar planilha*:
+👉 ${PAINEL_URL}
+
+Vem tudo: gastos, entradas, dívidas, parcelas e cofrinhos — do mês que você escolher.
+
+_Precisa da conta criada pra abrir o painel._`;
+
 const MSG_APAGAR_CONFIRMA = `⚠️ *Isso apaga tudo, e não tem volta.*
 
 Vou remover todos os seus lançamentos, dívidas, parcelas, cofrinhos, metas e categorias. O vínculo com o painel também sai.
@@ -171,8 +191,27 @@ const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 "está parcelado" _(eu pergunto em quantas vezes)_
 "isso é todo mês"
 
-*↩️ Corrigir um erro*
+*↩️ Corrigir e apagar*
 "apaga o último"
+"aquele mercado era 45"
+"apaga o gasto do mercado"
+"cancela a Netflix"
+"cancela o parcelamento da TV"
+"não paguei aquela parcela"
+
+*🤝 Quando a dívida é paga*
+"o João me pagou"
+"quitei a dívida da Maria"
+
+*🏷️ Suas categorias*
+"cria a categoria Pets"
+"apaga a categoria Viagem"
+
+*🐷 Organizar os cofrinhos*
+"renomeia o secador pra casa nova"
+
+*📗 Levar seus dados*
+"me manda a planilha"
 
 *📱 Ter o app no celular*
 "tem app?"
@@ -231,6 +270,8 @@ function verifyMetaSignature(req) {
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+const NL = String.fromCharCode(10);
 
 const currency = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -302,6 +343,48 @@ async function processIncomingMessage(phone, text) {
   // "Está parcelado" / "isso é todo mês": a pessoa reclassifica o que acabou de
   // mandar. Quase ninguém diz tudo de uma vez, e antes disto a segunda frase
   // não tinha onde encostar — o Guará respondia algo sem sentido.
+  // Daqui pra baixo é a paridade com o painel: tudo que tinha botão na tela e
+  // não tinha jeito nenhum no chat.
+  if (intencao === 'editar_lancamento') {
+    await replyWhatsApp(phone, await responderEditarLancamento(phone, items[0]));
+    return;
+  }
+
+  if (intencao === 'apagar_item') {
+    await replyWhatsApp(phone, await responderApagarItem(phone, items[0]));
+    return;
+  }
+
+  if (intencao === 'quitar_divida') {
+    await replyWhatsApp(phone, await responderQuitarDivida(phone, items[0]));
+    return;
+  }
+
+  if (intencao === 'desmarcar_parcela') {
+    await replyWhatsApp(phone, await responderDesmarcarParcela(phone, items[0]));
+    return;
+  }
+
+  if (intencao === 'renomear_cofrinho') {
+    await replyWhatsApp(phone, await responderRenomearCofrinho(phone, items[0]));
+    return;
+  }
+
+  if (intencao === 'categoria') {
+    await replyWhatsApp(phone, await responderCategoria(phone, items[0]));
+    return;
+  }
+
+  if (intencao === 'planilha') {
+    await replyWhatsApp(phone, MSG_PLANILHA);
+    return;
+  }
+
+  if (intencao === 'resumo') {
+    await replyWhatsApp(phone, await responderResumo(phone, items[0].period));
+    return;
+  }
+
   if (intencao === 'mover_guardado') {
     const r = await moverUltimoGuardado(phone, items[0].jar);
     await replyWhatsApp(phone, r
@@ -682,6 +765,205 @@ async function perguntaDeAssinatura(phone, saved) {
   }
 
   return `\n\n_Isso é todo mês?_ Responde *sim* que eu deixo automático. 🔁`;
+}
+
+// Lista as opções quando a frase não decidiu qual item era. Perguntar custa
+// uma mensagem; apagar o errado custa a confiança.
+function listarOpcoes(opcoes, verbo) {
+  return [
+    `Achei mais de um. Qual deles você quer ${verbo}? 🤔`,
+    '',
+    ...opcoes.map((o) => {
+      const nome = o.description || o.person || o.jar || 'sem nome';
+      return `• *${nome}* — R$ ${currency.format(Number(o.amount))}`;
+    }),
+    '',
+    'Me responde com o nome de um deles.',
+  ].join(NL);
+}
+
+async function responderEditarLancamento(phone, item) {
+  const r = await editarLancamento(phone, item);
+
+  if (r.semMudanca) {
+    return [
+      'Entendi que você quer corrigir, mas não achei o que mudar. 🤔',
+      '',
+      'Me diz o valor novo, tipo: _"aquele mercado era 45"_',
+    ].join(NL);
+  }
+  if (r.opcoes.length > 0) return listarOpcoes(r.opcoes, 'corrigir');
+  if (!r.depois) {
+    return [
+      `Não achei nenhum lançamento com esse nome. 🤔`,
+      '',
+      'Tenta me dizer do jeito que você anotou, ou peça _"meus últimos gastos"_ pra ver a lista.',
+    ].join(NL);
+  }
+
+  const { antes, depois } = r;
+  const mudou = [];
+  if (Number(antes.amount) !== Number(depois.amount)) {
+    mudou.push(`R$ ${currency.format(Number(antes.amount))} → *R$ ${currency.format(Number(depois.amount))}*`);
+  }
+  if (antes.category !== depois.category) mudou.push(`${antes.category} → *${depois.category}*`);
+  if (antes.description !== depois.description) mudou.push(`${antes.description} → *${depois.description}*`);
+
+  return ['✏️ *Corrigido!*', '', depois.description, ...mudou].join(NL);
+}
+
+const NOME_DO_TIPO = {
+  lancamento: 'lançamento',
+  divida: 'dívida',
+  recorrente: 'conta mensal',
+  parcelamento: 'parcelamento',
+  guardado: 'guardado',
+};
+
+async function responderApagarItem(phone, item) {
+  const r = await apagarItem(phone, item.tipo, item.description);
+  if (r.opcoes.length > 0) return listarOpcoes(r.opcoes, 'apagar');
+
+  const rotulo = NOME_DO_TIPO[item.tipo] || 'lançamento';
+  if (!r.alvo) {
+    return [
+      `Não achei nenhum(a) ${rotulo} com esse nome. 🤔`,
+      '',
+      'Confere o nome e me manda de novo — ou digite *ajuda* pra ver o que dá pra fazer.',
+    ].join(NL);
+  }
+
+  const nome = r.alvo.description || r.alvo.person || r.alvo.jar || rotulo;
+  const valor = `R$ ${currency.format(Number(r.alvo.amount))}`;
+
+  if (item.tipo === 'recorrente') {
+    return `🚫 *${nome}* cancelado.${NL}${NL}Não lanço mais os ${valor} todo mês. O que já foi lançado antes continua no histórico.`;
+  }
+  if (item.tipo === 'parcelamento') {
+    return `🚫 Parcelamento de *${nome}* cancelado.${NL}${NL}Tirei as ${r.alvo.installments_total} parcelas de ${valor}.`;
+  }
+  return `🗑️ Apaguei: *${nome}* — ${valor}.`;
+}
+
+async function responderQuitarDivida(phone, item) {
+  const r = await quitarDivida(phone, item.description);
+  if (r.opcoes.length > 0) return listarOpcoes(r.opcoes, 'quitar');
+  if (!r.alvo) {
+    return [
+      'Não achei nenhuma dívida em aberto com esse nome. 🤔',
+      '',
+      'Pergunta _"quanto eu devo?"_ que eu te mostro as que estão abertas.',
+    ].join(NL);
+  }
+
+  const { aReceber, aPagar } = await sumOpenDebts(phone);
+  const quem = r.alvo.person || 'essa dívida';
+  const valor = `R$ ${currency.format(Number(r.alvo.amount))}`;
+  const cabeca = r.alvo.direction === 'a_receber'
+    ? `🤝 *${quem} te pagou!*${NL}${NL}${valor} quitados.`
+    : `🤝 *Dívida quitada!*${NL}${NL}Você pagou ${valor} pra ${quem}.`;
+
+  const sobra = [];
+  if (aReceber > 0) sobra.push(`Ainda têm a te pagar: R$ ${currency.format(aReceber)}`);
+  if (aPagar > 0) sobra.push(`Você ainda deve: R$ ${currency.format(aPagar)}`);
+  return sobra.length ? [cabeca, '', ...sobra].join(NL) : `${cabeca}${NL}${NL}Não sobrou nenhuma dívida em aberto. 🎉`;
+}
+
+async function responderDesmarcarParcela(phone, item) {
+  const alvo = await desmarcarParcela(phone, item.description);
+  if (!alvo) {
+    return [
+      'Não achei nenhuma parcela marcada como paga pra desmarcar. 🤔',
+      '',
+      'Pergunta _"quais minhas parcelas?"_ que eu te mostro como estão.',
+    ].join(NL);
+  }
+  return [
+    '↩️ *Desmarquei!*',
+    '',
+    `${alvo.description} — parcela ${alvo.installment_number} de ${alvo.installments_total}`,
+    `R$ ${currency.format(Number(alvo.amount))} voltou pra lista de parcelas em aberto.`,
+  ].join(NL);
+}
+
+async function responderRenomearCofrinho(phone, item) {
+  if (!item.para) {
+    return 'Como você quer chamar o cofrinho? Me diz tipo: _"renomeia o secador pra casa nova"_';
+  }
+  const r = await renomearCofrinho(phone, item.de, item.para);
+  if (!r) {
+    const potes = await savingsByJar(phone);
+    if (potes.length === 0) return 'Você ainda não tem nenhum cofrinho. 🐷 Guarde algo primeiro, tipo _"guardei 100 na viagem"_.';
+    return [
+      'Não achei esse cofrinho. 🤔 Os seus são:',
+      '',
+      ...potes.map((x) => `• *${x.nome}* — R$ ${currency.format(x.total)}`),
+    ].join(NL);
+  }
+  return `🐷 Pronto! O cofrinho *${r.de}* agora se chama *${r.para}*.${NL}${NL}Os R$ ${currency.format(r.total)} continuam lá.`;
+}
+
+async function responderCategoria(phone, item) {
+  if (!item.nome) return 'Qual categoria? Me diz tipo: _"cria a categoria Pets"_';
+
+  if (item.acao === 'apagar') {
+    const alvo = await apagarCategoria(phone, item.nome);
+    if (!alvo) {
+      const atuais = await getCategories(phone);
+      return atuais.length
+        ? ['Não achei essa categoria. 🤔 As suas são:', '', ...atuais.map((c) => `• ${c}`)].join(NL)
+        : 'Você ainda não criou nenhuma categoria própria. 🏷️';
+    }
+    return `🏷️ Categoria *${alvo.name}* apagada.${NL}${NL}_Os lançamentos que estavam nela continuam onde estão._`;
+  }
+
+  const r = await criarCategoria(phone, item.nome);
+  if (!r) return 'Qual categoria? Me diz tipo: _"cria a categoria Pets"_';
+  return r.jaExistia
+    ? `Você já tem a categoria *${r.nome}*. 😉 Pode usar à vontade.`
+    : `🏷️ Categoria *${r.nome}* criada!${NL}${NL}Agora é só usar: _"paguei 50 em ${r.nome.toLowerCase()}"_`;
+}
+
+// O gráfico do painel, em texto. Barras de blocos porque é o que o WhatsApp
+// desenha igual em qualquer aparelho — emoji e tabela quebram o alinhamento.
+async function responderResumo(phone, period) {
+  const { saidas, entradas, categorias } = await sumTransactions(phone, period || 'mes');
+  const cats = (categorias || []).filter((c) => c.valor > 0);
+
+  if (cats.length === 0) {
+    return `Ainda não tem gasto nenhum ${rotuloPeriodo(period)} pra resumir. 🐺`;
+  }
+
+  // Barra de blocos porque é o único desenho que o WhatsApp alinha igual em
+  // qualquer aparelho — tabela e emoji quebram dependendo da fonte.
+  const LARGURA = 10;
+  const maior = cats[0].valor;
+  const linhas = cats.slice(0, 8).map(({ nome, valor }) => {
+    const cheios = Math.max(1, Math.round((valor / maior) * LARGURA));
+    const fatia = saidas > 0 ? Math.round((valor / saidas) * 100) : 0;
+    const barra = '▓'.repeat(cheios) + '░'.repeat(LARGURA - cheios);
+    return `${barra}  ${fatia}%${NL}*${nome}* — R$ ${currency.format(valor)}`;
+  });
+
+  const partes = [
+    `*📊 PRA ONDE FOI O DINHEIRO*`,
+    `_${rotuloPeriodo(period)}_`,
+    '',
+    linhas.join(NL + NL),
+    '',
+    `Total que saiu: *R$ ${currency.format(saidas)}*`,
+  ];
+  if (entradas > 0) partes.push(`Total que entrou: R$ ${currency.format(entradas)}`);
+  if (cats.length > 8) partes.push(`_(+ ${cats.length - 8} categorias menores)_`);
+  partes.push('', `Gráfico colorido no painel 👉 ${PAINEL_URL}`);
+  return partes.join(NL);
+}
+
+function rotuloPeriodo(period) {
+  if (period === 'mes_passado') return 'no mês passado';
+  if (period === 'semana') return 'nesta semana';
+  if (period === 'tudo') return 'no total';
+  return 'neste mês';
 }
 
 async function responderConverter(phone, item) {

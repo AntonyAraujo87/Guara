@@ -209,12 +209,21 @@ async function sumTransactions(phone, period, category) {
     if (t.type !== 'despesa') continue;
     porCategoria[t.category] = (porCategoria[t.category] || 0) + Number(t.amount);
   }
-  const topCategorias = Object.entries(porCategoria)
+  // A lista inteira, ordenada. O resumo do chat desenha o gráfico do painel
+  // em texto e precisa de todas; as respostas curtas continuam usando só as 3.
+  const categorias = Object.entries(porCategoria)
     .map(([nome, valor]) => ({ nome, valor }))
-    .sort((a, b) => b.valor - a.valor)
-    .slice(0, 3);
+    .sort((a, b) => b.valor - a.valor);
 
-  return { entradas, saidas, saldo: entradas - saidas, quantidade: linhas.length, topCategorias, label: bounds.label };
+  return {
+    entradas,
+    saidas,
+    saldo: entradas - saidas,
+    quantidade: linhas.length,
+    categorias,
+    topCategorias: categorias.slice(0, 3),
+    label: bounds.label,
+  };
 }
 
 async function listRecentTransactions(phone, limit = 5) {
@@ -770,7 +779,202 @@ async function moverUltimoGuardado(phone, jar) {
   return { amount: Number(alvo.amount), de: alvo.jar || 'Geral', para: destino || 'Geral' };
 }
 
+// ── PARIDADE COM O PAINEL ──────────────────────────────────────────
+// Tudo que dá pra fazer com o dedo na tela precisa dar pra fazer falando.
+// Quem usa só o WhatsApp — que é a maioria — não pode ficar sem apagar uma
+// dívida, cancelar uma assinatura ou corrigir um valor digitado errado.
+
+// Compara do jeito que a pessoa fala: sem acento, sem maiúscula, por pedaço.
+// "mercado" tem que achar "Mercado Extra", senão ela precisa lembrar do nome
+// exato que digitou — e ninguém lembra.
+function parecido(a, b) {
+  const x = semAcento(String(a || '').toLowerCase().trim());
+  const y = semAcento(String(b || '').toLowerCase().trim());
+  if (!x || !y) return false;
+  return x.includes(y) || y.includes(x);
+}
+
+function semAcento(t) {
+  return t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Acha registros pela descrição. Devolve a lista inteira quando há empate,
+// pra poder perguntar qual em vez de apagar o errado.
+async function acharPorDescricao(phone, tabela, texto, campos) {
+  const { data } = await supabaseAdmin
+    .from(tabela)
+    .select(campos)
+    .eq('user_phone', phone)
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  const linhas = data || [];
+  if (!String(texto || '').trim()) return linhas;
+
+  return linhas.filter((linha) =>
+    [linha.description, linha.person, linha.category, linha.jar]
+      .some((campo) => parecido(campo, texto))
+  );
+}
+
+// Vários candidatos com nomes diferentes = a frase não decidiu. Um só nome
+// repetido (três "Mercado") não é ambiguidade: é o mesmo alvo.
+function ambiguo(achados, descricao) {
+  if (!descricao || achados.length <= 1) return false;
+  return new Set(achados.map((a) => semAcento(String(a.description || '').toLowerCase()))).size > 1;
+}
+
+// "Não paguei aquela parcela." O painel tem um botão que desmarca; no chat
+// não havia como corrigir — o jeito era não ter jeito.
+async function desmarcarParcela(phone, descricao) {
+  const achados = await acharPorDescricao(
+    phone, 'installments', descricao,
+    'id, amount, description, created_at, installment_number, installments_total, paid_at, due_month'
+  );
+  const pagas = achados.filter((p) => p.paid_at);
+  if (pagas.length === 0) return null;
+  pagas.sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at));
+  const alvo = pagas[0];
+  const { error } = await supabaseAdmin
+    .from('installments').update({ paid_at: null }).eq('id', alvo.id);
+  if (error) throw error;
+  return alvo;
+}
+
+// Quitar dívida: o combinado virou dinheiro de verdade.
+async function quitarDivida(phone, descricao) {
+  const achados = await acharPorDescricao(
+    phone, 'debts', descricao, 'id, amount, direction, person, description, status, created_at'
+  );
+  const abertas = achados.filter((d) => d.status === 'pendente');
+  if (abertas.length === 0) return { alvo: null, opcoes: [] };
+
+  // Duas dívidas de pessoas diferentes: escolher sozinho quitaria a errada.
+  const pessoas = new Set(abertas.map((d) => semAcento(String(d.person || '').toLowerCase())));
+  if (abertas.length > 1 && pessoas.size > 1) return { alvo: null, opcoes: abertas.slice(0, 6) };
+
+  const alvo = abertas[0];
+  const { error } = await supabaseAdmin
+    .from('debts')
+    .update({ status: 'quitada', settled_at: new Date().toISOString() })
+    .eq('id', alvo.id);
+  if (error) throw error;
+  return { alvo, opcoes: [] };
+}
+
+const TABELAS_APAGAVEIS = {
+  lancamento: ['transactions', 'id, amount, type, category, description, created_at'],
+  divida: ['debts', 'id, amount, direction, person, description, created_at'],
+  recorrente: ['recurring', 'id, amount, description, day_of_month, created_at'],
+  parcelamento: ['installments', 'id, amount, description, purchase_id, installments_total, created_at'],
+  guardado: ['savings', 'id, amount, jar, description, created_at'],
+};
+
+// Apagar UM item do tipo que a pessoa disser. Antes só existia "apaga o
+// último", que não resolve nada de ontem.
+async function apagarItem(phone, tipo, descricao) {
+  const par = TABELAS_APAGAVEIS[tipo];
+  if (!par) return { alvo: null, opcoes: [] };
+  const [tabela, campos] = par;
+
+  const filtro = tipo === 'recorrente'
+    ? (l) => l
+    : (l) => l;
+  const achados = (await acharPorDescricao(phone, tabela, descricao, campos)).filter(filtro);
+  if (achados.length === 0) return { alvo: null, opcoes: [] };
+  if (ambiguo(achados, descricao)) return { alvo: null, opcoes: achados.slice(0, 6) };
+
+  const alvo = achados[0];
+  if (tipo === 'parcelamento') {
+    // A compra inteira sai: sobrar parcelas soltas de uma TV cancelada é pior
+    // do que não ter apagado nada.
+    const { error } = await supabaseAdmin
+      .from('installments').delete().eq('purchase_id', alvo.purchase_id);
+    if (error) throw error;
+  } else if (tipo === 'recorrente') {
+    // Recorrente sai por desativação, não por delete: o que ele já lançou nos
+    // meses passados continua sendo verdade.
+    const { error } = await supabaseAdmin
+      .from('recurring').update({ active: false }).eq('id', alvo.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabaseAdmin.from(tabela).delete().eq('id', alvo.id);
+    if (error) throw error;
+  }
+  return { alvo, opcoes: [] };
+}
+
+// Corrigir um lançamento já salvo: "aquele mercado era 45".
+async function editarLancamento(phone, { description, amount, category, novaDescricao }) {
+  const achados = await acharPorDescricao(
+    phone, 'transactions', description, 'id, amount, type, category, description, created_at'
+  );
+  if (achados.length === 0) return { alvo: null, opcoes: [] };
+  if (ambiguo(achados, description)) return { alvo: null, opcoes: achados.slice(0, 6) };
+
+  const campos = {};
+  if (Number(amount) > 0) campos.amount = Number(amount);
+  if (category) campos.category = category;
+  if (novaDescricao) campos.description = novaDescricao;
+  if (Object.keys(campos).length === 0) return { alvo: null, opcoes: [], semMudanca: true };
+
+  const alvo = achados[0];
+  const { data, error } = await supabaseAdmin
+    .from('transactions').update(campos).eq('id', alvo.id).select().single();
+  if (error) throw error;
+  return { antes: alvo, depois: data, opcoes: [] };
+}
+
+// Renomear cofrinho — existe no painel, não existia no chat.
+async function renomearCofrinho(phone, de, para) {
+  const nome = String(para || '').trim();
+  if (!nome) return null;
+
+  const potes = await savingsByJar(phone);
+  const alvo = potes.find((p) => parecido(p.nome, de));
+  if (!alvo) return null;
+
+  // O pote "Geral" é o que não tem nome: sair dele é preencher o campo.
+  const antigo = alvo.nome === 'Geral' ? '' : alvo.nome;
+  let q = supabaseAdmin.from('savings').update({ jar: nome }).eq('user_phone', phone);
+  q = antigo ? q.eq('jar', antigo) : q.or('jar.is.null,jar.eq.');
+  const { error } = await q;
+  if (error) throw error;
+  return { de: alvo.nome, para: nome, total: alvo.total };
+}
+
+// Categorias próprias: criar e apagar, como no painel.
+async function criarCategoria(phone, nome) {
+  const limpo = String(nome || '').trim();
+  if (!limpo) return null;
+  const atuais = await getCategories(phone);
+  if (atuais.some((c) => parecido(c, limpo))) return { nome: limpo, jaExistia: true };
+
+  const { error } = await supabaseAdmin
+    .from('categories').insert({ user_phone: phone, name: limpo });
+  if (error) throw error;
+  return { nome: limpo, jaExistia: false };
+}
+
+async function apagarCategoria(phone, nome) {
+  const { data } = await supabaseAdmin
+    .from('categories').select('id, name').eq('user_phone', phone);
+  const alvo = (data || []).find((c) => parecido(c.name, nome));
+  if (!alvo) return null;
+  const { error } = await supabaseAdmin.from('categories').delete().eq('id', alvo.id);
+  if (error) throw error;
+  return alvo;
+}
+
 module.exports = {
+  acharPorDescricao,
+  desmarcarParcela,
+  quitarDivida,
+  apagarItem,
+  editarLancamento,
+  renomearCofrinho,
+  criarCategoria,
+  apagarCategoria,
   moverUltimoGuardado,
   converterUltimoEmParcelamento,
   converterUltimoEmRecorrente,

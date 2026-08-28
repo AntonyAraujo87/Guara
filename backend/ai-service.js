@@ -102,13 +102,54 @@ Gatilhos de RECORRENTE: "isso é todo mês", "essa conta é mensal", "é fixo", 
 - NÃO confunda com "parcela_paga": "está parcelado" fala do que a conta É; "paguei a parcela" fala de um pagamento que ACONTECEU.
 - NÃO confunda com "parcelamento": aquele registra uma compra NOVA com valor e vezes na mesma frase ("comprei uma TV em 6x de 200"). Este aqui só reclassifica algo que já foi anotado.
 
-13. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
+14. Editar um lançamento já registrado (corrigir valor, categoria ou nome de algo que JÁ foi anotado):
+{"kind": "editar_lancamento", "description": string, "amount": number, "category": string, "novaDescricao": string}
+Gatilhos: "aquele mercado era 45", "muda o uber pra 30", "o almoço foi 25 e nao 35", "corrige a gasolina pra 180", "aquele gasto do mercado era na verdade farmacia".
+- description = como achar o lançamento (o nome que ela usou).
+- amount = o valor NOVO. 0 se ela não citar valor.
+- category = a categoria nova, se ela trocar de categoria. Vazio se não.
+- novaDescricao = o nome novo, se ela renomear. Vazio se não.
+- NÃO confunda com editar_recorrente: aqui é um gasto solto que já aconteceu; lá é uma conta que se repete todo mês.
+
+15. Apagar UM item específico (não é o último, e não é a conta inteira):
+{"kind": "apagar_item", "tipo": "lancamento" | "divida" | "recorrente" | "parcelamento" | "guardado", "description": string}
+Gatilhos: "apaga o gasto do mercado", "remove aquele uber", "cancela a Netflix" (tipo recorrente), "cancela o parcelamento da TV" (tipo parcelamento), "apaga a dívida do João" (tipo divida), "tira aqueles 200 que guardei" (tipo guardado).
+- "cancela"/"cancelar" + serviço mensal = tipo "recorrente". "cancela" + compra parcelada = tipo "parcelamento".
+- description = o nome do que ela quer apagar. Vazio se ela não disser qual.
+
+16. Quitar dívida (o combinado finalmente virou dinheiro de verdade):
+{"kind": "quitar_divida", "description": string}
+Gatilhos: "o João me pagou", "a Maria quitou", "paguei o que devia pro Pedro", "recebi do João aquele dinheiro", "quitei a dívida".
+- description = o nome da pessoa, se ela citar.
+- NÃO confunda com parcela_paga, que é sobre compra parcelada, não sobre dívida com pessoa.
+
+17. Desmarcar parcela (ela avisou que pagou, mas não pagou):
+{"kind": "desmarcar_parcela", "description": string}
+Gatilhos: "não paguei aquela parcela", "marquei errado a parcela da TV", "desmarca a parcela do sofá", "na verdade não paguei".
+
+18. Renomear cofrinho:
+{"kind": "renomear_cofrinho", "de": string, "para": string}
+Gatilhos: "muda o nome do cofrinho viagem pra férias", "renomeia o secador pra casa", "o cofrinho X agora chama Y".
+
+19. Categoria (criar ou apagar uma categoria própria):
+{"kind": "categoria", "acao": "criar" | "apagar", "nome": string}
+Gatilhos: "cria a categoria Pets", "quero uma categoria pra academia", "apaga a categoria Viagem", "remove a categoria X".
+
+20. Planilha (a pessoa quer os dados dela em arquivo):
+{"kind": "planilha"}
+Gatilhos: "me manda a planilha", "quero exportar", "tem como baixar meus dados", "manda em excel", "exportar tudo".
+
+21. Resumo por categoria (ela quer ver pra onde o dinheiro foi, o que no painel é o gráfico):
+{"kind": "resumo", "period": "mes" | "mes_passado" | "semana" | "tudo"}
+Gatilhos: "pra onde foi meu dinheiro", "resumo do mês", "gastei mais com o quê", "me mostra por categoria", "meu relatório".
+
+22. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
 {"kind": "apagar_dados", "confirmado": boolean}
 Gatilhos: "quero apagar meus dados", "apaga tudo", "quero excluir minha conta", "quero sair e apagar tudo", "me tira do sistema", "deleta tudo que voce tem de mim".
 - confirmado = true APENAS se a mensagem for exatamente a palavra de confirmação "APAGAR TUDO" (em maiúsculas ou não). Em qualquer outro caso, false.
 - CUIDADO com a diferença: "apaga o último" é kind "desfazer" (um lançamento só). "apaga tudo" é kind "apagar_dados" (a conta inteira). Se a frase citar UM item ou "o último", é sempre desfazer.
 
-14. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+23. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -207,6 +248,51 @@ async function extractItems(rawText, categoriasExtras = []) {
       return parsed.map((item) => {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
+        }
+        if (item.kind === 'editar_lancamento') {
+          return {
+            kind: 'editar_lancamento',
+            description: item.description || '',
+            amount: Number(item.amount) || 0,
+            category: item.category || '',
+            novaDescricao: item.novaDescricao || '',
+          };
+        }
+        if (item.kind === 'apagar_item') {
+          const TIPOS = ['lancamento', 'divida', 'recorrente', 'parcelamento', 'guardado'];
+          return {
+            kind: 'apagar_item',
+            // Tipo desconhecido vira lançamento comum: é o caso mais provável,
+            // e o backend ainda confere se achou algo antes de apagar.
+            tipo: TIPOS.includes(item.tipo) ? item.tipo : 'lancamento',
+            description: item.description || '',
+          };
+        }
+        if (item.kind === 'quitar_divida') {
+          return { kind: 'quitar_divida', description: item.description || '' };
+        }
+        if (item.kind === 'desmarcar_parcela') {
+          return { kind: 'desmarcar_parcela', description: item.description || '' };
+        }
+        if (item.kind === 'renomear_cofrinho') {
+          return {
+            kind: 'renomear_cofrinho',
+            de: (item.de || '').trim(),
+            para: (item.para || '').trim(),
+          };
+        }
+        if (item.kind === 'categoria') {
+          return {
+            kind: 'categoria',
+            acao: item.acao === 'apagar' ? 'apagar' : 'criar',
+            nome: (item.nome || '').trim(),
+          };
+        }
+        if (item.kind === 'planilha') {
+          return { kind: 'planilha' };
+        }
+        if (item.kind === 'resumo') {
+          return { kind: 'resumo', period: item.period || 'mes' };
         }
         if (item.kind === 'mover_guardado') {
           return { kind: 'mover_guardado', jar: (item.jar || '').trim() };
