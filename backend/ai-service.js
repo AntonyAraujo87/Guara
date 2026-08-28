@@ -657,6 +657,21 @@ Use esta data pra contar "diasAtras" e pra resolver mês nomeado:
 - "em junho" = "AAAA-06", com o ano em que junho já aconteceu.`;
 }
 
+// As carteiras DESTA pessoa. Sem isto o modelo não tem como saber que
+// "Abacate" é uma carteira — ele leu como fruta e mandou pra Alimentação.
+// Mesma ideia das categorias personalizadas: o que é só dela precisa entrar
+// na conversa, senão vira adivinhação.
+function blocoCarteiras(carteiras, ativa) {
+  if (!carteiras?.length || carteiras.length < 2) return '';
+  const lista = carteiras.map((c) => `"${c}"`).join(', ');
+  return `
+
+AS CARTEIRAS DESTA PESSOA: ${lista}. Ela está usando a "${ativa}" agora.
+- Quando um desses nomes aparecer na frase, ele é a CARTEIRA, não a descrição do gasto: "gastei 12 na abacate" com uma carteira chamada Abacate é um gasto de 12 NA CARTEIRA Abacate.
+- Preencha o campo "carteira" com o nome que ela usou, ou com o apontamento inteiro ("nessa mesma", "nela") quando ela apontar em vez de nomear.
+- Sem menção nenhuma, deixe "carteira" vazio: o sistema usa a que está valendo.`;
+}
+
 function blocoCategorias(categoriasExtras) {
   if (!categoriasExtras?.length) return '';
   const despesa = categoriasExtras.filter((c) => c.kind === 'despesa').map((c) => `"${c.name}"`);
@@ -741,11 +756,11 @@ function desligarAteVirada(nome) {
   console.error(`Cota diária de ${nome} esgotada. Só tento de novo em ${horas}h.`);
 }
 
-async function extractItems(rawText, categoriasExtras = []) {
+async function extractItems(rawText, categoriasExtras = [], carteiras = [], carteiraAtiva = '') {
   const texto = sanitizarTexto(rawText);
   if (!texto) return [];
 
-  const prompt = SYSTEM_PROMPT + blocoDeHoje() + blocoCategorias(categoriasExtras);
+  const prompt = SYSTEM_PROMPT + blocoDeHoje() + blocoCarteiras(carteiras, carteiraAtiva) + blocoCategorias(categoriasExtras);
 
   // Três tentativas no rápido, depois três no reserva. Numa lista só, em vez
   // de dois laços aninhados: a ordem fica explícita e o corpo não precisa de

@@ -366,7 +366,11 @@ async function atenderMensagem(phone, text, carteiraAtiva) {
   try {
     // As categorias que a pessoa criou entram no prompt, senão a IA só conhece as padrão.
     const categoriasExtras = await getCategories(phone);
-    items = await extractItems(text, categoriasExtras);
+    // As carteiras entram no prompt junto com as categorias: são a mesma
+    // natureza de informação — coisas que só existem pra esta pessoa e que o
+    // modelo não tem como adivinhar.
+    const { carteiras: minhasCarteiras } = await contextoDeCarteira(phone);
+    items = await extractItems(text, categoriasExtras, minhasCarteiras, carteiraAtiva);
   } catch (err) {
     console.error('Falha ao interpretar mensagem:', err.message);
 
