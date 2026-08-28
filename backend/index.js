@@ -634,7 +634,7 @@ async function salvarEResponder(phone, items, carteiraAtiva) {
     const varios = new Set(ondeSalvou).size > 1;
     const corpo = varios
       ? formatConfirmationPorCarteira(saved, ondeSalvou)
-      : formatConfirmation(saved) + (foraDaAtiva.length ? `${NL}_(na carteira *${foraDaAtiva[0]}*)_` : '');
+      : formatConfirmation(saved) + avisoDeData(saved) + (foraDaAtiva.length ? `${NL}_(na carteira *${foraDaAtiva[0]}*)_` : '');
     await replyWhatsApp(phone, corpo + (await perguntaDeAssinatura(phone, saved)));
   }
 
@@ -848,6 +848,18 @@ async function responderEditarRecorrente(phone, itens) {
 // "24,90 Amazon Kindle" quase sempre se repete todo mês, mas assumir isso
 // sozinho criaria uma conta mensal que a pessoa não pediu — e ela só
 // descobriria no mês seguinte. Então pergunta, e um "sim" resolve.
+// "gastei 50 ontem" entra em ontem. Sem dizer isso, a pessoa procura o
+// lançamento no dia de hoje, não acha, e conclui que não foi salvo.
+function avisoDeData(saved) {
+  const dias = saved.map((i) => Number(i.diasAtras) || 0).filter((d) => d > 0);
+  if (dias.length === 0) return '';
+
+  const quando = new Date(Date.now() - Math.max(...dias) * 24 * 60 * 60 * 1000);
+  const dia = String(quando.getUTCDate()).padStart(2, '0');
+  const mes = String(quando.getUTCMonth() + 1).padStart(2, '0');
+  return `${NL}_(lancei em ${dia}/${mes})_`;
+}
+
 async function perguntaDeAssinatura(phone, saved) {
   if (saved.length !== 1) return '';
   const item = saved[0];

@@ -44,6 +44,27 @@ async function ensureUser(phone) {
   return data;
 }
 
+// Quando o lançamento aconteceu. Gasto contado hoje mas ocorrido ontem
+// pertence a ontem: caindo em hoje, o total de ontem fica errado pra sempre e
+// a virada de mês joga despesa do mês passado no mês novo.
+//
+// O meio-dia é de propósito: o Brasil é UTC-3, e uma data à meia-noite local
+// vira 03:00 UTC — mas o contrário (00:00 UTC) volta como o dia ANTERIOR aqui.
+// Meio-dia fica longe das duas bordas.
+function quandoAconteceu(diasAtras) {
+  const dias = Math.round(Number(diasAtras));
+  // O teto de um ano também vive aqui, não só no ai-service: qualquer chamador
+  // futuro (o painel, um script) passaria um número solto e empurraria
+  // lançamento pra 2023 sem ninguém notar.
+  if (!Number.isFinite(dias) || dias <= 0 || dias > 365) return new Date().toISOString();
+
+  const agora = agoraBR();
+  const dia = new Date(Date.UTC(
+    agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate() - dias, 12, 0, 0
+  ));
+  return paraUTC(dia).toISOString();
+}
+
 async function saveTransaction(phone, transaction, carteira = carteiraAtual()) {
   await ensureUser(phone);
 
@@ -52,6 +73,7 @@ async function saveTransaction(phone, transaction, carteira = carteiraAtual()) {
     .insert({
       user_phone: phone,
       wallet: carteira,
+      created_at: quandoAconteceu(transaction.diasAtras),
       amount: transaction.amount,
       type: transaction.type,
       category: transaction.category,
@@ -72,6 +94,7 @@ async function saveDebt(phone, debt, carteira = carteiraAtual()) {
     .insert({
       user_phone: phone,
       wallet: carteira,
+      created_at: quandoAconteceu(debt.diasAtras),
       amount: debt.amount,
       direction: debt.direction,
       person: debt.person,
@@ -420,11 +443,12 @@ async function upcomingInstallments(phone, meses = 12, carteira = carteiraAtual(
 }
 
 // ── COFRINHO ───────────────────────────────────────────────────────
-async function saveSaving(phone, { amount, direction, description, jar }, carteira = carteiraAtual()) {
+async function saveSaving(phone, { amount, direction, description, jar, diasAtras }, carteira = carteiraAtual()) {
   const valor = direction === 'retirar' ? -Math.abs(amount) : Math.abs(amount);
   const { error } = await supabaseAdmin.from('savings').insert({
     user_phone: phone,
     wallet: carteira,
+    created_at: quandoAconteceu(diasAtras),
     amount: valor,
     jar: jar || null,
     description: description || null,

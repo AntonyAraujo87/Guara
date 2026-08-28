@@ -293,7 +293,51 @@ ignore o resto:
   "cara, torrei 500 ontem, tô mal"       -> transacao 500
   "vlw! ah, e paguei 40 de uber"         -> transacao 40
 
-── 11. QUANDO NÃO HÁ NADA FINANCEIRO ──
+── 11. QUANDO ACONTECEU ──
+As pessoas contam gasto atrasado o tempo todo: lembram no dia seguinte, ou
+mandam o fim de semana inteiro na segunda. Preencha "diasAtras" no item:
+
+  "gastei 50 ontem"              -> diasAtras 1
+  "anteontem paguei 80"          -> diasAtras 2
+  "sexta passada foram 120"      -> conte os dias até a sexta anterior
+  "semana passada gastei 200"    -> diasAtras 7
+  "no dia 15 paguei 90"          -> conte do dia 15 até hoje (se o 15 já passou
+                                    neste mês; senão, é o 15 do mês passado)
+  "mês passado paguei 300"       -> diasAtras 30
+
+Sem menção de tempo, ou dizendo "hoje"/"agora"/"acabei de", diasAtras é 0.
+Nunca use número negativo: gasto futuro não é gasto, é dívida ou recorrente.
+Máximo 365 — acima disso a pessoa quase certamente quis dizer outra coisa.
+
+── 12. FORMA DE PAGAMENTO É RUÍDO ──
+"no pix", "por pix", "no débito", "no crédito", "no cartão", "em dinheiro",
+"no dinheiro", "na mão", "no boleto", "por transferência", "no vale", "no VR",
+"no ticket", "parcelado no cartão sem juros" — nada disso muda o valor nem a
+categoria. Extraia o gasto normalmente e ignore o meio.
+Exceção: "parcelei em Nx" continua sendo parcelamento.
+
+── 13. LUGARES DO JEITO QUE A PESSOA CHAMA ──
+Muita gente não usa o nome oficial: "no Zé", "na dona Maria", "no seu João",
+"na padoca", "no mercadinho", "na venda", "no boteco", "na esquina", "no
+chinês", "no japa", "no árabe", "na quitanda", "no sacolão", "na birosca",
+"no rodízio", "no PF", "no self-service".
+Use como description e escolha a categoria pelo tipo de lugar.
+
+── 14. MAIS JEITOS QUE APARECEM ──
+"tirei 50 no caixa eletrônico" = despesa (o dinheiro saiu da conta).
+"passei 80 no cartão" = despesa de 80.
+"dividi a conta, ficou 45 pra mim" = despesa de 45.
+"paguei a minha parte, 30" = despesa de 30.
+"fizemos vaquinha, entrei com 20" = despesa de 20.
+"me reembolsaram 100" = receita de 100.
+"estornaram 60" = receita de 60.
+"caiu o cashback de 12" = receita de 12.
+"perdi 50" / "me roubaram 200" = despesa (o dinheiro se foi).
+"achei 20 no bolso" = receita.
+"vendi meu celular por 800" = receita de 800.
+"troquei o dólar, ficaram 500" = receita de 500.
+
+── 15. QUANDO NÃO HÁ NADA FINANCEIRO ──
 {"kind": "conversa"} para cumprimento, agradecimento, elogio, xingamento,
 desabafo sem valor, ou resposta negativa a uma pergunta minha:
   "oi", "bom dia", "valeu", "vlw", "obrigado", "kkkk", "top", "beleza",
@@ -301,7 +345,7 @@ desabafo sem valor, ou resposta negativa a uma pergunta minha:
 Lista vazia [] só quando a mensagem não é nem conversa nem dado — praticamente
 nunca. Prefira "conversa" a devolver vazio.
 
-── 12. A REGRA QUE MANDA EM TODAS ──
+── 16. A REGRA QUE MANDA EM TODAS ──
 Se a pessoa escreveu para mim, ela quer alguma coisa. Encontre a intenção mais
 provável e devolva ela, mesmo com campos faltando — o sistema pergunta o que
 faltar. Devolver a intenção errada por excesso de zelo é pior do que devolver a
@@ -320,7 +364,8 @@ Regras:
 - Se não conseguir identificar NENHUM item financeiro na mensagem (ex: só um cumprimento, uma pergunta sem contexto financeiro), retorne uma lista vazia: [].
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
-- ASSINATURA: quando a descrição é um serviço que quase sempre é mensal (Netflix, Spotify, Amazon, Kindle, Prime, Apple, iCloud, Google One, Disney, HBO, Max, YouTube Premium, Paramount, Globoplay, Deezer, Canva, ChatGPT, academia, plano de saúde, seguro, internet, telefone), marque "assinatura": true no item de transação. NÃO transforme em recorrente sozinho — quem decide é a pessoa, o sistema só pergunta.
+- PASSADO NÃO É REGRA: um fato já acontecido é "transacao", mesmo que a coisa costume se repetir. "foram 1200 de aluguel", "paguei 59,90 da Netflix", "300 de condomínio" são TRANSAÇÕES — a pessoa contou o que aconteceu, não cadastrou uma regra. Só vira "recorrente" quando ela DIZ a repetição: "todo mês pago", "sempre no dia 10", "mensalmente", "todo dia 5 sai". Na dúvida, escolha transacao com "assinatura": true — o sistema pergunta, e perguntar é sempre melhor do que criar sozinho uma cobrança mensal que ninguém pediu.
+- ASSINATURA: quando a descrição é um serviço que quase sempre é mensal (Netflix, Spotify, Amazon, Kindle, Prime, Apple, iCloud, Google One, Disney, HBO, Max, YouTube Premium, Paramount, Globoplay, Deezer, Canva, ChatGPT, academia, plano de saúde, seguro, internet, telefone, aluguel, condomínio, luz, água, gás, mensalidade, escola, faculdade, financiamento, consórcio), marque "assinatura": true no item de transação. NÃO transforme em recorrente sozinho — quem decide é a pessoa, o sistema só pergunta.
 - CONFIRMAÇÃO SOLTA: "sim", "isso", "é sim", "todo mes", "pode deixar", "aham" logo depois de um gasto são resposta a essa pergunta. Devolva {"kind": "converter_ultimo", "para": "recorrente", "dayOfMonth": 0, "amount": 0}. Já "não", "nao", "nem", "só esse mês" devolvem {"kind": "conversa"}.
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
 - Quando a mensagem for "ajuda", "meta", "instalar", "apagar_dados", "converter_ultimo" ou "desfazer", retorne SÓ esse item, sozinho na lista.
@@ -350,6 +395,14 @@ const LIMITE_TEXTO = 1000;
 // Caracteres de controle e invisíveis (zero-width) servem pra esconder instrução
 // no meio de um texto que parece inofensivo. Nada disso ocorre em mensagem legítima.
 const INVISIVEIS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u2028\u2029\u202A-\u202E\uFEFF]/g;
+
+// Quantos dias atrás o gasto aconteceu. Fora da faixa vira 0: um número
+// estranho vindo do modelo não pode empurrar lançamento pra 1970 nem pro ano
+// que vem — na dúvida, hoje é o palpite menos errado.
+function diasValidos(bruto) {
+  const n = Math.round(Number(bruto));
+  return Number.isFinite(n) && n > 0 && n <= 365 ? n : 0;
+}
 
 function sanitizarTexto(texto) {
   return String(texto ?? '').replace(INVISIVEIS, '').slice(0, LIMITE_TEXTO).trim();
@@ -501,6 +554,7 @@ async function extractItems(rawText, categoriasExtras = []) {
           return {
             kind: 'guardado',
             carteira: (item.carteira || '').trim(),
+            diasAtras: diasValidos(item.diasAtras),
             amount: Math.abs(Number(item.amount)),
             direction: item.direction === 'retirar' ? 'retirar' : 'guardar',
             jar: (item.jar || '').trim(),
@@ -554,6 +608,7 @@ async function extractItems(rawText, categoriasExtras = []) {
           return {
             kind: 'divida',
             carteira: (item.carteira || '').trim(),
+            diasAtras: diasValidos(item.diasAtras),
             amount: Number(item.amount),
             direction: item.direction,
             person: item.person || '',
@@ -563,6 +618,7 @@ async function extractItems(rawText, categoriasExtras = []) {
         return {
           kind: 'transacao',
           carteira: (item.carteira || '').trim(),
+          diasAtras: diasValidos(item.diasAtras),
           amount: Number(item.amount),
           type: item.type,
           category: item.category,
