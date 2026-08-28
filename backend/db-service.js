@@ -6,6 +6,31 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// A carteira de quem nunca pediu uma segunda. O nome aparece pra pessoa, e
+// está aqui em vez de espalhado porque trocá-lo é uma decisão de produto, não
+// uma caçada por trinta arquivos.
+const CARTEIRA_PADRAO = 'Pessoal';
+
+// Qual carteira vale nesta mensagem. Fica em AsyncLocalStorage, e não numa
+// variável de módulo, porque duas pessoas podem estar sendo atendidas ao mesmo
+// tempo: uma variável solta faria o gasto de uma cair na carteira da outra —
+// o pior bug possível num app de dinheiro.
+//
+// A alternativa era arrastar `carteira` por 34 chamadas e mais de vinte
+// assinaturas no index.js. Isso funcionaria, mas bastaria esquecer UMA para
+// gravar na carteira errada em silêncio.
+const { AsyncLocalStorage } = require('async_hooks');
+const contextoDaMensagem = new AsyncLocalStorage();
+
+function carteiraAtual() {
+  return contextoDaMensagem.getStore()?.carteira || CARTEIRA_PADRAO;
+}
+
+// Roda `fn` inteira — awaits inclusive — enxergando esta carteira.
+function comCarteira(carteira, fn) {
+  return contextoDaMensagem.run({ carteira: carteira || CARTEIRA_PADRAO }, fn);
+}
+
 async function ensureUser(phone) {
   // upsert atômico: cria o usuário se for a 1ª mensagem, e sempre marca quando foi a última
   // mensagem recebida (usado pra saber se a conversa está "aberta" pra fins de política do WhatsApp)
@@ -19,13 +44,14 @@ async function ensureUser(phone) {
   return data;
 }
 
-async function saveTransaction(phone, transaction) {
+async function saveTransaction(phone, transaction, carteira = carteiraAtual()) {
   await ensureUser(phone);
 
   const { data, error } = await supabaseAdmin
     .from('transactions')
     .insert({
       user_phone: phone,
+      wallet: carteira,
       amount: transaction.amount,
       type: transaction.type,
       category: transaction.category,
@@ -38,13 +64,14 @@ async function saveTransaction(phone, transaction) {
   return data;
 }
 
-async function saveDebt(phone, debt) {
+async function saveDebt(phone, debt, carteira = carteiraAtual()) {
   await ensureUser(phone);
 
   const { data, error } = await supabaseAdmin
     .from('debts')
     .insert({
       user_phone: phone,
+      wallet: carteira,
       amount: debt.amount,
       direction: debt.direction,
       person: debt.person,
@@ -130,10 +157,11 @@ function guardadoComoTransacao(linha) {
   };
 }
 
-async function buscarGuardadoComoTransacoes(phone, bounds, category) {
+async function buscarGuardadoComoTransacoes(phone, bounds, category, carteira = carteiraAtual()) {
   // Filtrar por outra categoria exclui o cofrinho: ele só aparece em "Guardado".
   if (category && category !== CATEGORIA_GUARDADO) return [];
-  let q = supabaseAdmin.from('savings').select('amount, jar, description, created_at').eq('user_phone', phone);
+  let q = supabaseAdmin.from('savings').select('amount, jar, description, created_at').eq('user_phone', phone)
+    .eq('wallet', carteira);
   q = aplicarPeriodo(q, bounds);
   const { data, error } = await q;
   if (error) throw error;
@@ -165,11 +193,12 @@ function parcelaComoTransacao(linha) {
   };
 }
 
-async function buscarParcelasPagasComoTransacoes(phone, bounds, category) {
+async function buscarParcelasPagasComoTransacoes(phone, bounds, category, carteira = carteiraAtual()) {
   let q = supabaseAdmin
     .from('installments')
     .select('amount, category, description, installment_number, installments_total, due_month, paid_at')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('paid', true);
 
   // Filtra pela data do PAGAMENTO: é quando o dinheiro saiu da conta.
@@ -183,9 +212,10 @@ async function buscarParcelasPagasComoTransacoes(phone, bounds, category) {
 }
 
 // Soma entradas e saídas do período, opcionalmente filtrando por categoria.
-async function sumTransactions(phone, period, category) {
+async function sumTransactions(phone, period, category, carteira = carteiraAtual()) {
   const bounds = periodBounds(period);
-  let query = supabaseAdmin.from('transactions').select('amount, type, category').eq('user_phone', phone);
+  let query = supabaseAdmin.from('transactions').select('amount, type, category').eq('user_phone', phone)
+    .eq('wallet', carteira);
   query = aplicarPeriodo(query, bounds);
   if (category) query = query.eq('category', category);
 
@@ -194,8 +224,8 @@ async function sumTransactions(phone, period, category) {
   // custava uns 75ms a mais em toda pergunta feita no WhatsApp.
   const [transacoes, guardado, parcelas] = await Promise.all([
     query,
-    buscarGuardadoComoTransacoes(phone, bounds, category),
-    buscarParcelasPagasComoTransacoes(phone, bounds, category),
+    buscarGuardadoComoTransacoes(phone, bounds, category, carteira),
+    buscarParcelasPagasComoTransacoes(phone, bounds, category, carteira),
   ]);
   if (transacoes.error) throw transacoes.error;
 
@@ -226,19 +256,21 @@ async function sumTransactions(phone, period, category) {
   };
 }
 
-async function listRecentTransactions(phone, limit = 5) {
+async function listRecentTransactions(phone, limit = 5, carteira = carteiraAtual()) {
   // As três em paralelo: nenhuma depende do resultado da outra.
   const [transacoes, guardado, parcelas] = await Promise.all([
     supabaseAdmin
       .from('transactions')
       .select('amount, type, category, description, created_at')
       .eq('user_phone', phone)
+    .eq('wallet', carteira)
       .order('created_at', { ascending: false })
       .limit(limit),
     supabaseAdmin
       .from('savings')
       .select('amount, jar, description, created_at')
       .eq('user_phone', phone)
+    .eq('wallet', carteira)
       .order('created_at', { ascending: false })
       .limit(limit),
     buscarParcelasPagasComoTransacoes(phone, { start: null, end: null }),
@@ -257,11 +289,12 @@ async function listRecentTransactions(phone, limit = 5) {
     .slice(0, limit);
 }
 
-async function sumOpenDebts(phone) {
+async function sumOpenDebts(phone, carteira = carteiraAtual()) {
   const { data, error } = await supabaseAdmin
     .from('debts')
     .select('amount, direction, person')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('status', 'pendente');
   if (error) throw error;
 
@@ -274,12 +307,13 @@ async function sumOpenDebts(phone) {
 // Apaga o último registro do usuário, seja ele qual for — o "errei, apaga isso" do
 // chat. Olhar só a tabela transactions apagava a coisa errada: quem tivesse acabado
 // de guardar dinheiro ou parcelar uma compra veria sumir um gasto antigo sem relação.
-async function deleteLastEntry(phone) {
+async function deleteLastEntry(phone, carteira = carteiraAtual()) {
   const ultimoDe = async (tabela, campos) => {
     const { data } = await supabaseAdmin
       .from(tabela)
       .select(campos)
       .eq('user_phone', phone)
+    .eq('wallet', carteira)
       .order('created_at', { ascending: false })
       .limit(1);
     return data?.[0] || null;
@@ -318,7 +352,7 @@ async function deleteLastEntry(phone) {
 // ── PARCELAS ───────────────────────────────────────────────────────
 // Uma compra em 6x vira 6 linhas, uma por mês, começando no mês que vem
 // (a primeira parcela quase sempre cai na fatura seguinte).
-async function saveInstallments(phone, { description, category, installments, installmentAmount }) {
+async function saveInstallments(phone, { description, category, installments, installmentAmount }, carteira = carteiraAtual()) {
   const agora = agoraBR();
   const linhas = [];
   const purchaseId = crypto.randomUUID();
@@ -327,6 +361,7 @@ async function saveInstallments(phone, { description, category, installments, in
     const vencimento = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth() + n, 1));
     linhas.push({
       user_phone: phone,
+      wallet: carteira,
       purchase_id: purchaseId,
       description,
       category: category || 'Outros',
@@ -343,12 +378,13 @@ async function saveInstallments(phone, { description, category, installments, in
 }
 
 // Parcelas que vencem num mês específico (aceita "2026-09" ou um Date).
-async function installmentsForMonth(phone, ano, mes) {
+async function installmentsForMonth(phone, ano, mes, carteira = carteiraAtual()) {
   const inicio = new Date(Date.UTC(ano, mes, 1)).toISOString().slice(0, 10);
   const { data, error } = await supabaseAdmin
     .from('installments')
     .select('*')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('due_month', inicio)
     .order('amount', { ascending: false });
   if (error) throw error;
@@ -356,7 +392,7 @@ async function installmentsForMonth(phone, ano, mes) {
 }
 
 // Tudo que ainda vai vencer, agrupado por mês — a "próximas faturas" do Nubank.
-async function upcomingInstallments(phone, meses = 12) {
+async function upcomingInstallments(phone, meses = 12, carteira = carteiraAtual()) {
   const agora = agoraBR();
   const inicio = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString().slice(0, 10);
 
@@ -364,6 +400,7 @@ async function upcomingInstallments(phone, meses = 12) {
     .from('installments')
     .select('*')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('paid', false)
     .gte('due_month', inicio)
     .order('due_month', { ascending: true });
@@ -383,10 +420,11 @@ async function upcomingInstallments(phone, meses = 12) {
 }
 
 // ── COFRINHO ───────────────────────────────────────────────────────
-async function saveSaving(phone, { amount, direction, description, jar }) {
+async function saveSaving(phone, { amount, direction, description, jar }, carteira = carteiraAtual()) {
   const valor = direction === 'retirar' ? -Math.abs(amount) : Math.abs(amount);
   const { error } = await supabaseAdmin.from('savings').insert({
     user_phone: phone,
+    wallet: carteira,
     amount: valor,
     jar: jar || null,
     description: description || null,
@@ -395,11 +433,12 @@ async function saveSaving(phone, { amount, direction, description, jar }) {
 }
 
 // Agrupa o cofrinho por nome. O que não tem nome cai em "Geral", senão sumiria da lista.
-async function savingsByJar(phone) {
+async function savingsByJar(phone, carteira = carteiraAtual()) {
   const { data, error } = await supabaseAdmin
     .from('savings')
     .select('amount, jar')
-    .eq('user_phone', phone);
+    .eq('user_phone', phone)
+    .eq('wallet', carteira);
   if (error) throw error;
 
   const potes = {};
@@ -412,11 +451,12 @@ async function savingsByJar(phone) {
     .sort((a, b) => b.total - a.total);
 }
 
-async function savingsSummary(phone) {
+async function savingsSummary(phone, carteira = carteiraAtual()) {
   const { data, error } = await supabaseAdmin
     .from('savings')
     .select('amount, created_at')
-    .eq('user_phone', phone);
+    .eq('user_phone', phone)
+    .eq('wallet', carteira);
   if (error) throw error;
 
   const linhas = data || [];
@@ -432,11 +472,12 @@ async function savingsSummary(phone) {
   return { total, noMes, quantidade: linhas.length };
 }
 
-async function listRecentSavings(phone, limit = 10) {
+async function listRecentSavings(phone, limit = 10, carteira = carteiraAtual()) {
   const { data, error } = await supabaseAdmin
     .from('savings')
     .select('*')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -454,11 +495,12 @@ async function getCategories(phone) {
 
 // ── MARCAR PARCELA COMO PAGA ───────────────────────────────────────
 // Sem descrição, marca a parcela em aberto mais antiga (a que vence primeiro).
-async function markInstallmentPaid(phone, descricao) {
+async function markInstallmentPaid(phone, descricao, carteira = carteiraAtual()) {
   let query = supabaseAdmin
     .from('installments')
     .select('id, description, installment_number, installments_total, amount, due_month')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('paid', false)
     .order('due_month', { ascending: true })
     .limit(1);
@@ -480,9 +522,10 @@ async function markInstallmentPaid(phone, descricao) {
 }
 
 // ── GASTOS RECORRENTES ─────────────────────────────────────────────
-async function saveRecurring(phone, { description, amount, type, category, dayOfMonth }) {
+async function saveRecurring(phone, { description, amount, type, category, dayOfMonth }, carteira = carteiraAtual()) {
   const campos = {
     user_phone: phone,
+    wallet: carteira,
     description,
     amount,
     type: type || 'despesa',
@@ -497,6 +540,7 @@ async function saveRecurring(phone, { description, amount, type, category, dayOf
     .from('recurring')
     .select('id')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('active', true)
     .ilike('description', description)
     .order('created_at', { ascending: false })
@@ -518,11 +562,12 @@ async function saveRecurring(phone, { description, amount, type, category, dayOf
   return data;
 }
 
-async function listRecurring(phone) {
+async function listRecurring(phone, carteira = carteiraAtual()) {
   const { data } = await supabaseAdmin
     .from('recurring')
     .select('*')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('active', true)
     .order('day_of_month');
   return data || [];
@@ -538,7 +583,7 @@ const JANELA_LOTE_MS = 5 * 60 * 1000;
 // centenas de linhas de uma vez; quando corta, quem chama avisa.
 const TETO_LOTE = 50;
 
-async function updateRecurring(phone, { description, dayOfMonth, amount, escopo }) {
+async function updateRecurring(phone, { description, dayOfMonth, amount, escopo }, carteira = carteiraAtual()) {
   const mudancas = {};
   if (dayOfMonth > 0) mudancas.day_of_month = Math.min(31, Math.max(1, Math.round(dayOfMonth)));
   if (amount > 0) mudancas.amount = amount;
@@ -547,6 +592,7 @@ async function updateRecurring(phone, { description, dayOfMonth, amount, escopo 
     .from('recurring')
     .select('*')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('active', true)
     .order('created_at', { ascending: false });
 
@@ -610,6 +656,9 @@ async function runRecurringForToday() {
     try {
       const { error: insError } = await supabaseAdmin.from('transactions').insert({
         user_phone: r.user_phone,
+        // O gasto fixo nasce na mesma carteira em que foi cadastrado: um
+        // aluguel da empresa não pode aparecer no saldo de casa.
+        wallet: r.wallet || CARTEIRA_PADRAO,
         amount: r.amount,
         type: r.type,
         category: r.category,
@@ -635,22 +684,24 @@ async function runRecurringForToday() {
 }
 
 // ── METAS ──────────────────────────────────────────────────────────
-async function getGoal(phone) {
-  const { data } = await supabaseAdmin.from('goals').select('*').eq('user_phone', phone).maybeSingle();
+async function getGoal(phone, carteira = carteiraAtual()) {
+  const { data } = await supabaseAdmin.from('goals').select('*').eq('user_phone', phone)
+    .eq('wallet', carteira).maybeSingle();
   return data || null;
 }
 
-async function saveGoal(phone, { monthlyTarget, goalName, goalTarget }) {
-  const atual = await getGoal(phone);
+async function saveGoal(phone, { monthlyTarget, goalName, goalTarget }, carteira = carteiraAtual()) {
+  const atual = await getGoal(phone, carteira);
   const registro = {
     user_phone: phone,
+    wallet: carteira,
     // Só sobrescreve o que veio preenchido — definir um objetivo não apaga a meta mensal.
     monthly_target: monthlyTarget > 0 ? monthlyTarget : atual?.monthly_target ?? null,
     goal_name: goalName || atual?.goal_name || null,
     goal_target: goalTarget > 0 ? goalTarget : atual?.goal_target ?? null,
     updated_at: new Date().toISOString(),
   };
-  const { error } = await supabaseAdmin.from('goals').upsert(registro, { onConflict: 'user_phone' });
+  const { error } = await supabaseAdmin.from('goals').upsert(registro, { onConflict: 'user_phone,wallet' });
   if (error) throw error;
   return registro;
 }
@@ -701,20 +752,21 @@ async function apagarTudoDoTelefone(phone) {
 // uma frase solta de hoje.
 const JANELA_CONVERSAO_MS = 24 * 60 * 60 * 1000;
 
-async function ultimaTransacaoRecente(phone) {
+async function ultimaTransacaoRecente(phone, carteira = carteiraAtual()) {
   const desde = new Date(Date.now() - JANELA_CONVERSAO_MS).toISOString();
   const { data } = await supabaseAdmin
     .from('transactions')
     .select('id, amount, type, category, description, created_at')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .gte('created_at', desde)
     .order('created_at', { ascending: false })
     .limit(1);
   return data?.[0] || null;
 }
 
-async function converterUltimoEmParcelamento(phone, { installments, amount }) {
-  const alvo = await ultimaTransacaoRecente(phone);
+async function converterUltimoEmParcelamento(phone, { installments, amount }, carteira = carteiraAtual()) {
+  const alvo = await ultimaTransacaoRecente(phone, carteira);
   if (!alvo) return null;
 
   // Sem valor próprio, cada parcela vale o que foi registrado. Quem diz
@@ -725,7 +777,7 @@ async function converterUltimoEmParcelamento(phone, { installments, amount }) {
     category: alvo.category,
     installments,
     installmentAmount: valorParcela,
-  });
+  }, carteira);
 
   // A transação sai: ela virou a primeira parcela, e deixá-la contaria duas vezes.
   await supabaseAdmin.from('transactions').delete().eq('id', alvo.id);
@@ -733,8 +785,8 @@ async function converterUltimoEmParcelamento(phone, { installments, amount }) {
   return { origem: alvo, parcelas, valorParcela, installments };
 }
 
-async function converterUltimoEmRecorrente(phone, { dayOfMonth, amount }) {
-  const alvo = await ultimaTransacaoRecente(phone);
+async function converterUltimoEmRecorrente(phone, { dayOfMonth, amount }, carteira = carteiraAtual()) {
+  const alvo = await ultimaTransacaoRecente(phone, carteira);
   if (!alvo) return null;
 
   const valor = amount > 0 ? amount : Number(alvo.amount);
@@ -748,7 +800,7 @@ async function converterUltimoEmRecorrente(phone, { dayOfMonth, amount }) {
     type: alvo.type,
     category: alvo.category,
     dayOfMonth: dia,
-  });
+  }, carteira);
 
   // A transação FICA: ela é o lançamento deste mês, que já aconteceu. O
   // recorrente cuida dos próximos. Apagá-la sumiria com um gasto real.
@@ -758,12 +810,13 @@ async function converterUltimoEmRecorrente(phone, { dayOfMonth, amount }) {
 // Troca o cofrinho do último "guardei" — é como a resposta à pergunta "em qual
 // cofrinho?" volta a encostar no lançamento certo, sem guardar estado de
 // conversa em lugar nenhum. Serve também pra "na verdade era no da viagem".
-async function moverUltimoGuardado(phone, jar) {
+async function moverUltimoGuardado(phone, jar, carteira = carteiraAtual()) {
   const desde = new Date(Date.now() - JANELA_CONVERSAO_MS).toISOString();
   const { data } = await supabaseAdmin
     .from('savings')
     .select('id, amount, jar')
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .eq('direction', 'guardar')
     .gte('created_at', desde)
     .order('created_at', { ascending: false })
@@ -800,11 +853,12 @@ function semAcento(t) {
 
 // Acha registros pela descrição. Devolve a lista inteira quando há empate,
 // pra poder perguntar qual em vez de apagar o errado.
-async function acharPorDescricao(phone, tabela, texto, campos) {
+async function acharPorDescricao(phone, tabela, texto, campos, carteira = carteiraAtual()) {
   const { data } = await supabaseAdmin
     .from(tabela)
     .select(campos)
     .eq('user_phone', phone)
+    .eq('wallet', carteira)
     .order('created_at', { ascending: false })
     .limit(200);
 
@@ -826,10 +880,11 @@ function ambiguo(achados, descricao) {
 
 // "Não paguei aquela parcela." O painel tem um botão que desmarca; no chat
 // não havia como corrigir — o jeito era não ter jeito.
-async function desmarcarParcela(phone, descricao) {
+async function desmarcarParcela(phone, descricao, carteira = carteiraAtual()) {
   const achados = await acharPorDescricao(
     phone, 'installments', descricao,
-    'id, amount, description, created_at, installment_number, installments_total, paid_at, due_month'
+    'id, amount, description, created_at, installment_number, installments_total, paid_at, due_month',
+    carteira
   );
   const pagas = achados.filter((p) => p.paid_at);
   if (pagas.length === 0) return null;
@@ -842,9 +897,9 @@ async function desmarcarParcela(phone, descricao) {
 }
 
 // Quitar dívida: o combinado virou dinheiro de verdade.
-async function quitarDivida(phone, descricao) {
+async function quitarDivida(phone, descricao, carteira = carteiraAtual()) {
   const achados = await acharPorDescricao(
-    phone, 'debts', descricao, 'id, amount, direction, person, description, status, created_at'
+    phone, 'debts', descricao, 'id, amount, direction, person, description, status, created_at', carteira
   );
   const abertas = achados.filter((d) => d.status === 'pendente');
   if (abertas.length === 0) return { alvo: null, opcoes: [] };
@@ -872,7 +927,7 @@ const TABELAS_APAGAVEIS = {
 
 // Apagar UM item do tipo que a pessoa disser. Antes só existia "apaga o
 // último", que não resolve nada de ontem.
-async function apagarItem(phone, tipo, descricao) {
+async function apagarItem(phone, tipo, descricao, carteira = carteiraAtual()) {
   const par = TABELAS_APAGAVEIS[tipo];
   if (!par) return { alvo: null, opcoes: [] };
   const [tabela, campos] = par;
@@ -880,7 +935,7 @@ async function apagarItem(phone, tipo, descricao) {
   const filtro = tipo === 'recorrente'
     ? (l) => l
     : (l) => l;
-  const achados = (await acharPorDescricao(phone, tabela, descricao, campos)).filter(filtro);
+  const achados = (await acharPorDescricao(phone, tabela, descricao, campos, carteira)).filter(filtro);
   if (achados.length === 0) return { alvo: null, opcoes: [] };
   if (ambiguo(achados, descricao)) return { alvo: null, opcoes: achados.slice(0, 6) };
 
@@ -905,9 +960,9 @@ async function apagarItem(phone, tipo, descricao) {
 }
 
 // Corrigir um lançamento já salvo: "aquele mercado era 45".
-async function editarLancamento(phone, { description, amount, category, novaDescricao }) {
+async function editarLancamento(phone, { description, amount, category, novaDescricao }, carteira = carteiraAtual()) {
   const achados = await acharPorDescricao(
-    phone, 'transactions', description, 'id, amount, type, category, description, created_at'
+    phone, 'transactions', description, 'id, amount, type, category, description, created_at', carteira
   );
   if (achados.length === 0) return { alvo: null, opcoes: [] };
   if (ambiguo(achados, description)) return { alvo: null, opcoes: achados.slice(0, 6) };
@@ -926,17 +981,18 @@ async function editarLancamento(phone, { description, amount, category, novaDesc
 }
 
 // Renomear cofrinho — existe no painel, não existia no chat.
-async function renomearCofrinho(phone, de, para) {
+async function renomearCofrinho(phone, de, para, carteira = carteiraAtual()) {
   const nome = String(para || '').trim();
   if (!nome) return null;
 
-  const potes = await savingsByJar(phone);
+  const potes = await savingsByJar(phone, carteira);
   const alvo = potes.find((p) => parecido(p.nome, de));
   if (!alvo) return null;
 
   // O pote "Geral" é o que não tem nome: sair dele é preencher o campo.
   const antigo = alvo.nome === 'Geral' ? '' : alvo.nome;
-  let q = supabaseAdmin.from('savings').update({ jar: nome }).eq('user_phone', phone);
+  let q = supabaseAdmin.from('savings').update({ jar: nome }).eq('user_phone', phone)
+    .eq('wallet', carteira);
   q = antigo ? q.eq('jar', antigo) : q.or('jar.is.null,jar.eq.');
   const { error } = await q;
   if (error) throw error;
@@ -966,7 +1022,144 @@ async function apagarCategoria(phone, nome) {
   return alvo;
 }
 
+// ── CARTEIRAS ──────────────────────────────────────────────────────
+// Separar o dinheiro pessoal do dinheiro do trabalho. Ideia de um usuário:
+// quem é autônomo mistura os dois, e um saldo que soma o mercado com o
+// pagamento de um cliente não serve pra decidir nada.
+//
+// Nenhum CPF nem CNPJ é pedido: seria dado sensível sem função. São dois
+// nomes, e só.
+
+// As tabelas onde a carteira vive. Renomear precisa passar em todas — deixar
+// uma de fora esconderia dinheiro num nome que não existe mais.
+const TABELAS_COM_CARTEIRA = ['transactions', 'debts', 'installments', 'savings', 'recurring', 'goals'];
+
+const LIMITE_CARTEIRAS = 5;
+
+function nomeDeCarteira(bruto) {
+  const limpo = String(bruto || '').trim().slice(0, 24);
+  // "cria uma conta da empresa" chega como "empresa", e esse nome vira botão no
+  // painel e negrito nas mensagens. Minúsculo ali parece descuido.
+  return limpo ? limpo[0].toUpperCase() + limpo.slice(1) : '';
+}
+
+// Qual carteira está valendo agora, e quais existem. Uma consulta só: as duas
+// respostas vêm da mesma linha, e o bot precisa das duas em toda mensagem.
+async function contextoDeCarteira(phone) {
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('active_wallet, wallets')
+    .eq('phone', phone)
+    .maybeSingle();
+
+  // Sem linha ainda, ou banco antigo sem as colunas: cai no padrão. Quem
+  // nunca pediu uma segunda carteira não pode quebrar por causa disto.
+  const lista = Array.isArray(data?.wallets) && data.wallets.length ? data.wallets : [CARTEIRA_PADRAO];
+  const ativa = data?.active_wallet || CARTEIRA_PADRAO;
+  return { ativa: lista.includes(ativa) ? ativa : lista[0], carteiras: lista };
+}
+
+async function criarCarteira(phone, nome) {
+  const limpo = nomeDeCarteira(nome);
+  if (!limpo) return { erro: 'sem_nome' };
+
+  const { carteiras } = await contextoDeCarteira(phone);
+  const jaTem = carteiras.find((c) => c.toLowerCase() === limpo.toLowerCase());
+  if (jaTem) return { erro: 'ja_existe', nome: jaTem };
+  if (carteiras.length >= LIMITE_CARTEIRAS) return { erro: 'demais', carteiras };
+
+  const lista = [...carteiras, limpo];
+  const { error } = await supabaseAdmin
+    .from('users')
+    // Criar já entra nela: quem acabou de criar a carteira da empresa vai
+    // lançar algo da empresa em seguida, não voltar pra pessoal.
+    .update({ wallets: lista, active_wallet: limpo })
+    .eq('phone', phone);
+  if (error) throw error;
+  return { nome: limpo, carteiras: lista };
+}
+
+async function trocarCarteira(phone, nome) {
+  const { carteiras, ativa } = await contextoDeCarteira(phone);
+  const limpo = nomeDeCarteira(nome);
+  const alvo = carteiras.find((c) => c.toLowerCase() === limpo.toLowerCase())
+    || carteiras.find((c) => parecido(c, limpo));
+  if (!alvo) return { erro: 'nao_achei', carteiras };
+  if (alvo === ativa) return { jaEstava: true, nome: alvo, carteiras };
+
+  const { error } = await supabaseAdmin
+    .from('users').update({ active_wallet: alvo }).eq('phone', phone);
+  if (error) throw error;
+  return { nome: alvo, carteiras };
+}
+
+async function renomearCarteira(phone, de, para) {
+  const novo = nomeDeCarteira(para);
+  if (!novo) return { erro: 'sem_nome' };
+
+  const { carteiras, ativa } = await contextoDeCarteira(phone);
+  const alvo = carteiras.find((c) => parecido(c, de));
+  if (!alvo) return { erro: 'nao_achei', carteiras };
+  if (carteiras.some((c) => c !== alvo && c.toLowerCase() === novo.toLowerCase())) {
+    return { erro: 'ja_existe', nome: novo };
+  }
+
+  // Todas as tabelas antes da lista: se algo falhar no meio, o nome antigo
+  // continua na lista e o dinheiro continua achável.
+  for (const tabela of TABELAS_COM_CARTEIRA) {
+    const { error } = await supabaseAdmin
+      .from(tabela).update({ wallet: novo }).eq('user_phone', phone).eq('wallet', alvo);
+    if (error) throw error;
+  }
+
+  const lista = carteiras.map((c) => (c === alvo ? novo : c));
+  const { error } = await supabaseAdmin
+    .from('users')
+    .update({ wallets: lista, active_wallet: ativa === alvo ? novo : ativa })
+    .eq('phone', phone);
+  if (error) throw error;
+  return { de: alvo, para: novo, carteiras: lista };
+}
+
+// Apagar carteira NÃO apaga dinheiro: o que estava nela volta pra padrão.
+// Sumir com lançamentos por causa de um nome seria a pior surpresa possível.
+async function apagarCarteira(phone, nome) {
+  const { carteiras, ativa } = await contextoDeCarteira(phone);
+  const alvo = carteiras.find((c) => parecido(c, nome));
+  if (!alvo) return { erro: 'nao_achei', carteiras };
+  if (alvo === CARTEIRA_PADRAO) return { erro: 'e_a_padrao' };
+  if (carteiras.length <= 1) return { erro: 'ultima' };
+
+  let movidos = 0;
+  for (const tabela of TABELAS_COM_CARTEIRA) {
+    const { data, error } = await supabaseAdmin
+      .from(tabela)
+      .update({ wallet: CARTEIRA_PADRAO })
+      .eq('user_phone', phone)
+      .eq('wallet', alvo)
+      .select('id');
+    if (error) throw error;
+    movidos += (data || []).length;
+  }
+
+  const lista = carteiras.filter((c) => c !== alvo);
+  const { error } = await supabaseAdmin
+    .from('users')
+    .update({ wallets: lista, active_wallet: ativa === alvo ? CARTEIRA_PADRAO : ativa })
+    .eq('phone', phone);
+  if (error) throw error;
+  return { nome: alvo, movidos, carteiras: lista };
+}
+
 module.exports = {
+  CARTEIRA_PADRAO,
+  comCarteira,
+  carteiraAtual,
+  contextoDeCarteira,
+  criarCarteira,
+  trocarCarteira,
+  renomearCarteira,
+  apagarCarteira,
   acharPorDescricao,
   desmarcarParcela,
   quitarDivida,

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { categoryColor } from '@/lib/chartColors';
@@ -98,6 +98,10 @@ const CATEGORIAS_PADRAO = {
   receita: ['Salário', 'Freelance', 'Investimentos', 'Presente/Reembolso', 'Outros'],
 };
 
+// O mesmo nome que o backend usa (backend/db-service.js). Quem nunca criou
+// uma segunda carteira tem só esta, e o painel se comporta como sempre.
+const CARTEIRA_PADRAO = 'Pessoal';
+
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -154,6 +158,12 @@ export default function Home() {
   const [phone, setPhone] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
+  // Carteira: separa o dinheiro de casa do dinheiro do trabalho. Quem só tem
+  // uma nunca vê o seletor — a barra inteira some, em vez de mostrar uma opção
+  // única que não faz nada.
+  const [carteiras, setCarteiras] = useState<string[]>([CARTEIRA_PADRAO]);
+  const [carteira, setCarteira] = useState<string>(CARTEIRA_PADRAO);
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
@@ -196,6 +206,15 @@ export default function Home() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // Lê a lista e a que está valendo no WhatsApp, pra o painel abrir no mesmo
+  // lugar onde a conversa parou.
+  const fetchCarteiras = useCallback(async () => {
+    const { data } = await supabase.from('users').select('active_wallet, wallets').maybeSingle();
+    const lista = Array.isArray(data?.wallets) && data.wallets.length ? data.wallets : [CARTEIRA_PADRAO];
+    setCarteiras(lista);
+    setCarteira((atual) => (lista.includes(atual) ? atual : data?.active_wallet || lista[0]));
+  }, []);
+
   async function fetchProfile(userId: string) {
     setProfileLoading(true);
     try {
@@ -217,7 +236,7 @@ export default function Home() {
 
   // Busca só o mês pedido. Carregar "os últimos 500" quebrava a navegação:
   // quem passasse de 500 lançamentos veria meses antigos vazios.
-  async function fetchTransactions(ano: number, mes: number) {
+  const fetchTransactions = useCallback(async (ano: number, mes: number) => {
     setLoading(true);
     try {
       const inicio = new Date(ano, mes, 1).toISOString();
@@ -225,6 +244,7 @@ export default function Home() {
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
+        .eq('wallet', carteira)
         .gte('created_at', inicio)
         .lt('created_at', fim)
         .order('created_at', { ascending: false });
@@ -234,52 +254,63 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [carteira]);
 
-  async function fetchDebts() {
+  const fetchDebts = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('debts')
         .select('*')
+        .eq('wallet', carteira)
         .eq('status', 'pendente')
         .order('created_at', { ascending: false });
       if (!error && data) setDebts(data as Debt[]);
     } catch (err) {
       console.error('Erro ao buscar dívidas:', err);
     }
-  }
+  }, [carteira]);
 
-  async function fetchInstallments() {
+  const fetchInstallments = useCallback(async () => {
     const { data, error } = await supabase
       .from('installments')
       .select('*')
+      .eq('wallet', carteira)
       .order('due_month', { ascending: true });
     if (!error && data) setInstallments(data as Installment[]);
-  }
+  }, [carteira]);
 
-  async function fetchSavings() {
+  const fetchSavings = useCallback(async () => {
     const { data, error } = await supabase
       .from('savings')
       .select('*')
+      .eq('wallet', carteira)
       .order('created_at', { ascending: false });
     if (!error && data) setSavings(data as Saving[]);
-  }
+  }, [carteira]);
 
-  async function fetchGoal() {
-    const { data } = await supabase.from('goals').select('*').maybeSingle();
+  const fetchGoal = useCallback(async () => {
+    const { data } = await supabase.from('goals').select('*').eq('wallet', carteira).maybeSingle();
     setGoal((data as Goal) || null);
-  }
+  }, [carteira]);
 
-  async function fetchRecurring() {
-    const { data, error } = await supabase.from('recurring').select('*').eq('active', true).order('day_of_month');
+  const fetchRecurring = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('recurring').select('*').eq('wallet', carteira).eq('active', true).order('day_of_month');
     if (!error && data) setRecurring(data as Recorrente[]);
-  }
+  }, [carteira]);
 
-  async function fetchCategories() {
+  const fetchCategories = useCallback(async () => {
     const { data, error } = await supabase.from('categories').select('*').order('name');
     if (!error && data) setCategories(data as Categoria[]);
-  }
+  }, []);
 
+  useEffect(() => {
+    if (!phone) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-dependency-change, the sanctioned data-fetching pattern
+    fetchCarteiras();
+  }, [phone, fetchCarteiras]);
+
+  // Trocar de carteira recarrega tudo: os dados de uma não valem na outra.
   useEffect(() => {
     if (!phone) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-dependency-change, the sanctioned data-fetching pattern
@@ -289,7 +320,7 @@ export default function Home() {
     fetchGoal();
     fetchCategories();
     fetchRecurring();
-  }, [phone]);
+  }, [phone, fetchDebts, fetchInstallments, fetchSavings, fetchGoal, fetchCategories, fetchRecurring]);
 
   // Recarrega os lançamentos sempre que muda o mês selecionado.
   useEffect(() => {
@@ -297,7 +328,7 @@ export default function Home() {
     const { ano, mes } = mesPorDeslocamento(monthOffset);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-dependency-change, the sanctioned data-fetching pattern
     fetchTransactions(ano, mes);
-  }, [phone, monthOffset]);
+  }, [phone, monthOffset, fetchTransactions]);
 
   async function handleDelete(id: string) {
     if (!confirm('Apagar essa transação?')) return;
@@ -791,6 +822,29 @@ export default function Home() {
             <LogOut size={17} /> Sair
           </button>
         </header>
+
+        {/* Carteiras: só aparece pra quem tem mais de uma. Um seletor com uma
+            opção só é ruído — ocupa espaço e não decide nada. */}
+        {carteiras.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            <Wallet size={17} className="text-[var(--tinta-media)]" aria-hidden />
+            <span className="rotulo text-xs text-[var(--tinta-media)] mr-1">Carteira</span>
+            {carteiras.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCarteira(c)}
+                aria-pressed={c === carteira}
+                className={`rotulo text-sm px-4 py-2 rounded-full border-2 transition ${
+                  c === carteira
+                    ? 'bg-[var(--ferrugem)] border-[var(--ferrugem)] text-[var(--sobre-ferrugem)]'
+                    : 'border-[var(--borda-forte)] text-[var(--tinta-media)] hover:bg-[var(--areia)]'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Abas */}
         <div className="flex flex-wrap gap-2 mb-6" role="tablist">

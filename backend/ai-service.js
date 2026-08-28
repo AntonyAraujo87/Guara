@@ -2,6 +2,10 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Um lugar só. Texto, áudio e imagem usam o mesmo modelo, e trocar de modelo
+// não pode virar caçada por três arquivos.
+const MODELO = 'gemini-flash-lite-latest';
+
 const SYSTEM_PROMPT = `Você é um assistente pessoal de controle de gastos, no estilo do app Pierre (CloudWalk) — recebe mensagens em linguagem natural sobre dinheiro e organiza automaticamente.
 Extraia da mensagem do usuário TODOS os itens financeiros mencionados e responda APENAS com um JSON válido, sem markdown, sem texto extra, no formato de uma lista. Cada item é de um destes dois tipos:
 
@@ -143,13 +147,31 @@ Gatilhos: "me manda a planilha", "quero exportar", "tem como baixar meus dados",
 {"kind": "resumo", "period": "mes" | "mes_passado" | "semana" | "tudo"}
 Gatilhos: "pra onde foi meu dinheiro", "resumo do mês", "gastei mais com o quê", "me mostra por categoria", "meu relatório".
 
-22. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
+22. Carteira (a pessoa quer separar o dinheiro pessoal do dinheiro do trabalho):
+{"kind": "carteira", "acao": "criar" | "trocar" | "listar" | "renomear" | "apagar", "nome": string, "novoNome": string}
+Gatilhos de "criar": "cria uma conta da empresa", "quero separar o dinheiro da empresa", "cria uma carteira pro meu PJ", "quero uma conta pro trabalho", "separa o pessoal do profissional".
+Gatilhos de "trocar": "muda pra empresa", "vamos pro PJ", "volta pro pessoal", "agora é da loja", "entra na carteira da empresa".
+Gatilhos de "listar": "quais minhas carteiras", "quais contas eu tenho", "em qual conta eu tô", "onde eu tô lançando".
+Gatilhos de "renomear": "muda o nome da carteira empresa pra loja", "renomeia a conta PJ pra consultoria".
+Gatilhos de "apagar": "apaga a carteira da loja", "não quero mais a conta da empresa".
+- "conta", "carteira", "perfil", "PJ", "CNPJ", "empresa", "trabalho", "pessoal", "CPF" são as palavras que as pessoas usam pra isso.
+- nome = o nome da carteira. Em "renomear", nome é a atual e novoNome é a nova.
+- CUIDADO: "conta de luz", "conta do mercado", "minha conta mensal" NÃO são carteira — são despesa ou recorrente. Carteira é sobre SEPARAR dinheiro em grupos, não sobre pagar algo.
+
+23. Lançar em outra carteira sem trocar de contexto (a pessoa diz de qual dinheiro é, no meio do lançamento):
+Isso NÃO é um kind próprio. É o campo "carteira" dentro do item normal:
+{"kind": "transacao", "amount": 200, "type": "despesa", "category": "...", "description": "...", "carteira": "Empresa"}
+Gatilhos: "gastei 200 na empresa", "recebi 3000 do cliente, é do PJ", "esse foi pessoal", "300 de material, conta da loja".
+- Preencha "carteira" SÓ quando a pessoa disser explicitamente de qual é. Vazio significa "a que está valendo agora".
+- Vale para transacao, divida, parcelamento, guardado e recorrente.
+
+24. Apagar dados (a pessoa quer excluir TUDO — a conta inteira, não um lançamento):
 {"kind": "apagar_dados", "confirmado": boolean}
 Gatilhos: "quero apagar meus dados", "apaga tudo", "quero excluir minha conta", "quero sair e apagar tudo", "me tira do sistema", "deleta tudo que voce tem de mim".
 - confirmado = true APENAS se a mensagem for exatamente a palavra de confirmação "APAGAR TUDO" (em maiúsculas ou não). Em qualquer outro caso, false.
 - CUIDADO com a diferença: "apaga o último" é kind "desfazer" (um lançamento só). "apaga tudo" é kind "apagar_dados" (a conta inteira). Se a frase citar UM item ou "o último", é sempre desfazer.
 
-23. Desfazer (a pessoa quer apagar o último lançamento que registrou):
+25. Desfazer (a pessoa quer apagar o último lançamento que registrou):
 {"kind": "desfazer"}
 Gatilhos: "apaga o último", "desfaz", "cancela isso", "errei", "apaga isso", "desconsidera".
 
@@ -218,7 +240,7 @@ async function extractItems(rawText, categoriasExtras = []) {
   const texto = sanitizarTexto(rawText);
   if (!texto) return [];
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-flash-lite-latest' });
+  const model = genAI.getGenerativeModel({ model: MODELO });
   const prompt = SYSTEM_PROMPT + blocoCategorias(categoriasExtras);
 
   let lastError;
@@ -248,6 +270,17 @@ async function extractItems(rawText, categoriasExtras = []) {
       return parsed.map((item) => {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
+        }
+        if (item.kind === 'carteira') {
+          const ACOES = ['criar', 'trocar', 'listar', 'renomear', 'apagar'];
+          return {
+            kind: 'carteira',
+            // Ação desconhecida vira "listar": mostrar é a única que não muda
+            // nada, e é a resposta certa pra quem só quer saber onde está.
+            acao: ACOES.includes(item.acao) ? item.acao : 'listar',
+            nome: (item.nome || '').trim(),
+            novoNome: (item.novoNome || '').trim(),
+          };
         }
         if (item.kind === 'editar_lancamento') {
           return {
@@ -317,6 +350,7 @@ async function extractItems(rawText, categoriasExtras = []) {
         if (item.kind === 'recorrente') {
           return {
             kind: 'recorrente',
+            carteira: (item.carteira || '').trim(),
             description: item.description || rawText.slice(0, 80),
             amount: Math.abs(Number(item.amount)),
             type: item.type === 'receita' ? 'receita' : 'despesa',
@@ -327,6 +361,7 @@ async function extractItems(rawText, categoriasExtras = []) {
         if (item.kind === 'guardado') {
           return {
             kind: 'guardado',
+            carteira: (item.carteira || '').trim(),
             amount: Math.abs(Number(item.amount)),
             direction: item.direction === 'retirar' ? 'retirar' : 'guardar',
             jar: (item.jar || '').trim(),
@@ -368,6 +403,7 @@ async function extractItems(rawText, categoriasExtras = []) {
           const total = Number(item.total) || installmentAmount * installments;
           return {
             kind: 'parcelamento',
+            carteira: (item.carteira || '').trim(),
             installments,
             installmentAmount,
             total,
@@ -378,6 +414,7 @@ async function extractItems(rawText, categoriasExtras = []) {
         if (item.kind === 'divida') {
           return {
             kind: 'divida',
+            carteira: (item.carteira || '').trim(),
             amount: Number(item.amount),
             direction: item.direction,
             person: item.person || '',
@@ -386,6 +423,7 @@ async function extractItems(rawText, categoriasExtras = []) {
         }
         return {
           kind: 'transacao',
+          carteira: (item.carteira || '').trim(),
           amount: Number(item.amount),
           type: item.type,
           category: item.category,
@@ -409,4 +447,68 @@ async function extractItems(rawText, categoriasExtras = []) {
   throw lastError;
 }
 
-module.exports = { extractItems };
+// ── ÁUDIO E IMAGEM ─────────────────────────────────────────────────
+// Muita gente prefere falar a digitar, e quase todo mundo já tem a foto do
+// comprovante no celular. Nos dois casos a mídia vira TEXTO, e o texto passa
+// pelo mesmo extractItems de sempre: uma cabeça só decidindo o que é gasto.
+
+// Áudio demora mais que texto — medido: 1s a 11s pra um recado curto, e mais de
+// dois minutos pra um arquivo grande. Por isso o teto de tamanho fica no
+// media-service, e o timeout aqui é maior que o de texto.
+const TIMEOUT_MIDIA = 90_000;
+
+async function transcreverAudio(buffer, mimeType) {
+  const model = genAI.getGenerativeModel({ model: MODELO });
+  const r = await model.generateContent(
+    [
+      'Transcreva EXATAMENTE o que a pessoa fala neste áudio, em português do Brasil.',
+      'Responda SÓ a transcrição, sem aspas, sem comentário e sem explicação.',
+      'Se não houver fala nenhuma, responda apenas: VAZIO',
+      { inlineData: { mimeType, data: buffer.toString('base64') } },
+    ],
+    { timeout: TIMEOUT_MIDIA }
+  );
+
+  const texto = sanitizarTexto(r.response.text());
+  return /^vazio\.?$/i.test(texto) ? '' : texto;
+}
+
+// Lê comprovante, nota, cupom ou print de transferência e devolve uma FRASE —
+// não um JSON. A frase entra no extractItems normal, então tudo que o Guará já
+// sabe fazer com texto ("é parcelado", categoria certa, cofrinho) vale igual
+// pra foto, sem duplicar nenhuma regra.
+async function lerImagem(buffer, mimeType) {
+  const model = genAI.getGenerativeModel({ model: MODELO });
+  const r = await model.generateContent(
+    [
+      `Você está olhando uma foto que uma pessoa mandou pro app de finanças dela.
+
+Se for comprovante, nota fiscal, cupom, boleto, print de PIX ou de transferência:
+responda UMA frase curta em português, do jeito que a pessoa falaria, com o valor
+TOTAL e o estabelecimento. Exemplos de resposta:
+"paguei 87,50 no Mercado Extra"
+"recebi 1200 de transferência do João"
+"paguei 240 de conta de luz"
+
+Regras:
+- Use o valor TOTAL pago, nunca o de um item solto.
+- Se houver parcelamento escrito na nota (ex: "3x de 80"), diga: "comprei em 3x de 80 na Casas Bahia".
+- Se for dinheiro que ENTROU (recebimento, PIX recebido), comece com "recebi".
+- Não invente. Se o valor não estiver legível, responda: ILEGIVEL
+- Se a foto não for nada financeiro (pessoa, paisagem, meme, animal), responda: NAOFINANCEIRO
+
+Responda só a frase, sem aspas e sem explicação.`,
+      { inlineData: { mimeType, data: buffer.toString('base64') } },
+    ],
+    { timeout: TIMEOUT_MIDIA }
+  );
+
+  const texto = sanitizarTexto(r.response.text());
+  if (/^ilegivel\.?$/i.test(texto)) return { erro: 'ilegivel' };
+  if (/^naofinanceiro\.?$/i.test(texto)) return { erro: 'nao_financeiro' };
+  return { frase: texto };
+}
+
+module.exports = {
+  transcreverAudio,
+  lerImagem, extractItems };

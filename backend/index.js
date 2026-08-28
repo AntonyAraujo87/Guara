@@ -5,7 +5,8 @@ const axios = require('axios');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { extractItems } = require('./ai-service');
+const { extractItems, transcreverAudio, lerImagem } = require('./ai-service');
+const { baixarAudio, baixarImagem } = require('./media-service');
 const {
   saveTransaction,
   saveDebt,
@@ -30,6 +31,13 @@ const {
   apagarTudoDoTelefone,
   converterUltimoEmParcelamento,
   moverUltimoGuardado,
+  CARTEIRA_PADRAO,
+  comCarteira,
+  contextoDeCarteira,
+  criarCarteira,
+  trocarCarteira,
+  renomearCarteira,
+  apagarCarteira,
   desmarcarParcela,
   quitarDivida,
   apagarItem,
@@ -66,7 +74,9 @@ Anoto seus gastos por aqui mesmo, no WhatsApp. Sem planilha, sem app pra baixar,
 *Experimenta agora:* me conta um gasto recente, do seu jeito.
 Tipo: _"paguei 30 no mercado"_
 
-Pode escrever torto, sem acento, com abreviação — eu entendo. 😉`;
+Pode escrever torto, sem acento, com abreviação — eu entendo. 😉
+
+_Preferir falar? Manda áudio. Tem o comprovante? Manda a foto._`;
 
 // Mensagem 2: a conta é OPCIONAL e isso precisa ficar claro. Ela não é um pedágio
 // pra usar o Guará — é o que destrava os gráficos. As regras de senha e formato de
@@ -210,6 +220,16 @@ const MSG_AJUDA = `*🐺 O QUE EU SEI FAZER*
 *🐷 Organizar os cofrinhos*
 "renomeia o secador pra casa nova"
 
+*🎧 Mandar áudio ou foto*
+Grava um áudio contando o gasto
+Manda foto do comprovante, nota ou print do PIX
+
+*👛 Separar trabalho de pessoal*
+"cria uma carteira da empresa"
+"muda pra empresa"
+"gastei 200 na empresa"
+"quais minhas carteiras"
+
 *📗 Levar seus dados*
 "me manda a planilha"
 
@@ -284,10 +304,16 @@ const processedMessageIds = new Set();
 const SIM = /^(sim|isso|isso ai|isso aí|é sim|eh sim|s|ss|aham|uhum|claro|pode|pode deixar|pode sim|todo mes|todo mês|é mensal|eh mensal|confirmo|positivo|yes|ok|blz|beleza)[.!]*$/i;
 const NAO = /^(n|nao|não|nn|negativo|so esse mes|só esse mês|so esse|nao é|não é|nope|no)[.!]*$/i;
 
+// Resolve em qual carteira esta mensagem vai cair, e roda o atendimento
+// inteiro dentro desse contexto. Quem nunca criou uma segunda carteira nem
+// percebe: cai sempre na padrão.
 async function processIncomingMessage(phone, text) {
-  // Marca a conversa como aberta já na chegada, mesmo que a mensagem não tenha nada financeiro
-  // (ex: um "oi" pra liberar o envio do código de verificação no dashboard).
   await ensureUser(phone);
+  const { ativa } = await contextoDeCarteira(phone);
+  return comCarteira(ativa, () => atenderMensagem(phone, text, ativa));
+}
+
+async function atenderMensagem(phone, text, carteiraAtiva) {
 
   const cru = String(text).trim();
   if (SIM.test(cru)) {
@@ -382,6 +408,11 @@ async function processIncomingMessage(phone, text) {
 
   if (intencao === 'resumo') {
     await replyWhatsApp(phone, await responderResumo(phone, items[0].period));
+    return;
+  }
+
+  if (intencao === 'carteira') {
+    await replyWhatsApp(phone, await responderCarteira(phone, items[0], carteiraAtiva));
     return;
   }
 
@@ -534,6 +565,24 @@ async function processIncomingMessage(phone, text) {
   // Os que têm valor seguem; os zerados ficam de fora em vez de virar R$ 0,00.
   items = items.filter((i) => !semValor.includes(i));
 
+  // "gastei 200 na empresa" lança lá sem trocar o contexto — a próxima
+  // mensagem volta pra carteira em que ela estava. Trocar por baixo dos panos
+  // faria o lançamento seguinte cair no lugar errado sem aviso nenhum.
+  const outraCarteira = items.map((i) => i.carteira).find(Boolean);
+  if (outraCarteira) {
+    const { carteiras } = await contextoDeCarteira(phone);
+    const alvo = carteiras.find((c) => c.toLowerCase() === outraCarteira.toLowerCase())
+      || carteiras.find((c) => c.toLowerCase().includes(outraCarteira.toLowerCase()));
+    if (alvo && alvo !== carteiraAtiva) {
+      await comCarteira(alvo, () => salvarEResponder(phone, items, alvo, carteiraAtiva));
+      return;
+    }
+  }
+
+  await salvarEResponder(phone, items, carteiraAtiva, carteiraAtiva);
+}
+
+async function salvarEResponder(phone, items, carteira, carteiraAtiva) {
   const saved = [];
   for (const item of items) {
     try {
@@ -553,9 +602,16 @@ async function processIncomingMessage(phone, text) {
 
   // Guardar dinheiro merece resposta própria: mostra o cofrinho e o andamento da meta.
   if (saved.length === 1 && saved[0].kind === 'guardado') {
-    await replyWhatsApp(phone, await confirmarGuardado(phone, saved[0]));
+    const onde = carteira !== carteiraAtiva ? `${NL}${NL}_(na carteira *${carteira}*)_` : '';
+    await replyWhatsApp(phone, (await confirmarGuardado(phone, saved[0])) + onde);
   } else {
-    await replyWhatsApp(phone, formatConfirmation(saved) + (await perguntaDeAssinatura(phone, saved)));
+    // Se caiu numa carteira diferente da que estava valendo, avisa. Sem isso a
+    // pessoa não teria como saber onde o dinheiro foi parar.
+    const ondeCaiu = carteira !== carteiraAtiva ? `${NL}_(na carteira *${carteira}*)_` : '';
+    await replyWhatsApp(
+      phone,
+      formatConfirmation(saved) + ondeCaiu + (await perguntaDeAssinatura(phone, saved))
+    );
   }
 
   await convidarParaPainel(phone);
@@ -765,6 +821,105 @@ async function perguntaDeAssinatura(phone, saved) {
   }
 
   return `\n\n_Isso é todo mês?_ Responde *sim* que eu deixo automático. 🔁`;
+}
+
+// ── CARTEIRAS ──────────────────────────────────────────────────────
+// Separar o dinheiro de casa do dinheiro do trabalho. Quem nunca pedir uma
+// segunda carteira nunca vê nada disto — nem uma linha a mais nas respostas.
+
+function listaDeCarteiras(carteiras, ativa) {
+  return carteiras.map((c) => (c === ativa ? `• *${c}* ← você está aqui` : `• ${c}`)).join(NL);
+}
+
+async function responderCarteira(phone, item, ativa) {
+  const { acao, nome, novoNome } = item;
+
+  if (acao === 'listar') {
+    const { carteiras } = await contextoDeCarteira(phone);
+    if (carteiras.length === 1) {
+      return [
+        `Você tem uma carteira só: *${carteiras[0]}*. 👛`,
+        '',
+        'Dá pra separar o dinheiro do trabalho do dinheiro de casa, se quiser. É só dizer:',
+        '_"cria uma carteira da empresa"_',
+        '',
+        '_Cada carteira tem saldo, gastos e cofrinhos próprios._',
+      ].join(NL);
+    }
+    return [
+      '👛 *Suas carteiras*',
+      '',
+      listaDeCarteiras(carteiras, ativa),
+      '',
+      'Pra mudar: _"muda pra ' + carteiras.find((c) => c !== ativa) + '"_',
+      'Pra lançar sem mudar: _"gastei 50 na ' + carteiras.find((c) => c !== ativa) + '"_',
+    ].join(NL);
+  }
+
+  if (acao === 'criar') {
+    if (!nome) {
+      return [
+        'Boa ideia! 👛 Como você quer chamar a carteira nova?',
+        '',
+        'Me diz tipo: _"cria a carteira Empresa"_',
+      ].join(NL);
+    }
+    const r = await criarCarteira(phone, nome);
+    if (r.erro === 'ja_existe') return `Você já tem a carteira *${r.nome}*. 😉 Pra ir pra ela: _"muda pra ${r.nome}"_`;
+    if (r.erro === 'demais') {
+      return [
+        `Você já tem ${r.carteiras.length} carteiras, que é o máximo. 😅`,
+        '',
+        listaDeCarteiras(r.carteiras, ativa),
+        '',
+        'Apaga uma que não usa pra abrir espaço — o dinheiro dela não some, volta pra *' + CARTEIRA_PADRAO + '*.',
+      ].join(NL);
+    }
+    if (r.erro) return 'Como você quer chamar a carteira? Me diz tipo: _"cria a carteira Empresa"_';
+
+    return [
+      `👛 *Carteira ${r.nome} criada!*`,
+      '',
+      `A partir de agora eu lanço tudo aqui. Saldo, gastos, parcelas e cofrinhos dela são separados da *${CARTEIRA_PADRAO}*.`,
+      '',
+      `Pra voltar: _"muda pra ${CARTEIRA_PADRAO}"_`,
+      `Pra lançar na outra sem sair daqui: _"gastei 50, é pessoal"_`,
+    ].join(NL);
+  }
+
+  if (acao === 'trocar') {
+    const r = await trocarCarteira(phone, nome);
+    if (r.erro === 'nao_achei') {
+      return ['Não achei essa carteira. 🤔 Você tem:', '', listaDeCarteiras(r.carteiras, ativa)].join(NL);
+    }
+    if (r.jaEstava) return `Você já está na *${r.nome}*. 👛`;
+    return [
+      `👛 Agora você está na carteira *${r.nome}*.`,
+      '',
+      'Tudo que você mandar daqui pra frente cai aqui.',
+    ].join(NL);
+  }
+
+  if (acao === 'renomear') {
+    const r = await renomearCarteira(phone, nome, novoNome);
+    if (r.erro === 'sem_nome') return 'Qual o nome novo? Me diz tipo: _"renomeia a carteira empresa pra loja"_';
+    if (r.erro === 'ja_existe') return `Você já tem uma carteira chamada *${r.nome}*. Escolhe outro nome.`;
+    if (r.erro) return ['Não achei essa carteira. 🤔 Você tem:', '', listaDeCarteiras(r.carteiras, ativa)].join(NL);
+    return `👛 A carteira *${r.de}* agora se chama *${r.para}*.${NL}${NL}Nada foi movido — só o nome mudou.`;
+  }
+
+  // apagar
+  const r = await apagarCarteira(phone, nome);
+  if (r.erro === 'e_a_padrao') return `A *${CARTEIRA_PADRAO}* não dá pra apagar — é onde tudo cai por padrão. 🙂`;
+  if (r.erro === 'ultima') return 'Essa é sua única carteira, não dá pra apagar. 🙂';
+  if (r.erro) return ['Não achei essa carteira. 🤔 Você tem:', '', listaDeCarteiras(r.carteiras, ativa)].join(NL);
+  return [
+    `👛 Carteira *${r.nome}* apagada.`,
+    '',
+    r.movidos > 0
+      ? `Os ${r.movidos} lançamentos dela foram pra *${CARTEIRA_PADRAO}* — nada foi perdido.`
+      : 'Ela estava vazia, então não movi nada.',
+  ].join(NL);
 }
 
 // Lista as opções quando a frase não decidiu qual item era. Perguntar custa
@@ -1282,10 +1437,82 @@ app.get('/meta-webhook', (req, res) => {
 // "joinha" com "não entendi" seria mais irritante do que ficar quieto.
 const TIPOS_IGNORADOS = new Set(['reaction', 'system', 'order']);
 
+// Áudio e foto viram TEXTO, e o texto segue pelo mesmo caminho de sempre. Toda
+// regra que o Guará já tem — parcelamento, cofrinho, carteira, categoria —
+// passa a valer pra fala e pra foto de comprovante sem ser reescrita.
+//
+// O que a pessoa vê de volta inclui o que foi entendido: transcrição pode errar
+// e leitura de nota pode errar, e sem mostrar não haveria como perceber.
+async function tratarMidia(phone, message) {
+  const ehAudio = message.type === 'audio';
+  const mediaId = ehAudio ? message.audio?.id : message.image?.id;
+  if (!mediaId) return;
+
+  await ensureUser(phone);
+
+  let texto;
+  try {
+    if (ehAudio) {
+      const { buffer, mimeType } = await baixarAudio(mediaId);
+      texto = await transcreverAudio(buffer, mimeType);
+      if (!texto) {
+        await replyWhatsApp(phone, [
+          'Não consegui ouvir nada nesse áudio. 🙉',
+          '',
+          'Tenta gravar de novo mais perto do microfone, ou me manda escrito.',
+        ].join(NL));
+        return;
+      }
+    } else {
+      const { buffer, mimeType } = await baixarImagem(mediaId);
+      const r = await lerImagem(buffer, mimeType);
+      if (r.erro === 'nao_financeiro') {
+        await replyWhatsApp(phone, [
+          'Bonita a foto! 😄 Mas não achei nada de dinheiro nela.',
+          '',
+          'Me manda foto de comprovante, nota, cupom ou print de PIX que eu anoto sozinho.',
+        ].join(NL));
+        return;
+      }
+      if (r.erro === 'ilegivel' || !r.frase) {
+        await replyWhatsApp(phone, [
+          'Consegui ver que é um comprovante, mas o valor não está legível. 🔍',
+          '',
+          'Tenta uma foto com mais luz, ou me diz o valor: _"paguei 87,50 no mercado"_',
+        ].join(NL));
+        return;
+      }
+      texto = r.frase;
+    }
+  } catch (err) {
+    if (err.message === 'grande_demais') {
+      await replyWhatsApp(phone, ehAudio
+        ? `Esse áudio ficou comprido demais pra mim. 😅${NL}${NL}Manda um mais curto, ou escreve — nos dois casos eu anoto igual.`
+        : `Essa imagem ficou grande demais pra mim. 😅${NL}${NL}Manda uma menor, ou me diz o valor escrito.`);
+      return;
+    }
+    console.error(`Falha ao tratar ${message.type} de ${phone}:`, err.message);
+    await replyWhatsApp(phone, [
+      ehAudio ? 'Não consegui ouvir esse áudio. 😕' : 'Não consegui abrir essa imagem. 😕',
+      '',
+      'Me manda escrito que eu anoto na hora.',
+    ].join(NL));
+    return;
+  }
+
+  // O aviso do que foi entendido vai ANTES, e separado: a confirmação do
+  // lançamento já é longa, e enfiar a transcrição no meio dela esconderia
+  // justamente a parte que a pessoa precisa conferir.
+  await replyWhatsApp(phone, ehAudio
+    ? `🎧 Entendi: _"${texto}"_`
+    : `📸 Li no comprovante: _"${texto}"_`);
+
+  await processIncomingMessage(phone, texto);
+}
+
 function msgTipoNaoSuportado(tipo) {
+  // audio e image não chegam aqui: são tratados em tratarMidia.
   const abertura = {
-    audio: 'Ainda não consigo ouvir áudio. 🙉',
-    image: 'Ainda não consigo ler imagem. 🙈',
     video: 'Ainda não consigo ver vídeo. 🎬',
     document: 'Ainda não consigo abrir arquivo. 📄',
     sticker: 'Figurinha eu até curto, mas não sei anotar. 😄',
@@ -1295,9 +1522,10 @@ function msgTipoNaoSuportado(tipo) {
 
   return `${abertura}
 
-Me manda escrito que eu anoto na hora:
+Me manda escrito, por áudio, ou uma foto do comprovante:
 💸 _"paguei 30 no mercado"_
-💰 _"recebi 500 do freela"_
+🎧 um áudio contando o gasto
+📸 foto da nota ou do print do PIX
 
 Digite *ajuda* pra ver tudo que eu faço. 😉`;
 }
@@ -1326,6 +1554,11 @@ app.post('/meta-webhook', webhookLimiter, async (req, res) => {
       // Cada mensagem no seu próprio try: sem isso, uma falha ao responder a
       // primeira abortaria o laço e as seguintes sumiriam sem deixar rastro.
       try {
+        if (message.type === 'audio' || message.type === 'image') {
+          await tratarMidia(phone, message);
+          continue;
+        }
+
         if (message.type !== 'text') {
           if (TIPOS_IGNORADOS.has(message.type)) continue;
           // Silêncio faz a pessoa achar que o bot morreu. Um aviso por lote:
