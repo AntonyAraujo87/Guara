@@ -21,6 +21,11 @@ guarapp.duckdns.org {
 	# quem visitou antes continuaria tentando QUIC por até 30 dias.
 	header Alt-Svc "clear"
 
+	# O "Via" entrega qual servidor está na frente, o que só ajuda quem procura
+	# uma falha conhecida daquele software. Não protege nada sozinho — mas é
+	# informação dada de graça, e não precisa ser dada.
+	header -Via
+
 	# O HTML nunca pode ficar presa em cache. Ele referencia os arquivos JS pelo
 	# nome, e nome muda a cada publicacao — um HTML velho aponta pra codigo que
 	# nao existe mais, e o app simplesmente nao sobe. Os arquivos sob
