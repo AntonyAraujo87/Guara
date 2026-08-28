@@ -746,7 +746,32 @@ async function converterUltimoEmRecorrente(phone, { dayOfMonth, amount }) {
   return { origem: alvo, recorrente: salvo };
 }
 
+// Troca o cofrinho do último "guardei" — é como a resposta à pergunta "em qual
+// cofrinho?" volta a encostar no lançamento certo, sem guardar estado de
+// conversa em lugar nenhum. Serve também pra "na verdade era no da viagem".
+async function moverUltimoGuardado(phone, jar) {
+  const desde = new Date(Date.now() - JANELA_CONVERSAO_MS).toISOString();
+  const { data } = await supabaseAdmin
+    .from('savings')
+    .select('id, amount, jar')
+    .eq('user_phone', phone)
+    .eq('direction', 'guardar')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const alvo = data?.[0];
+  if (!alvo) return null;
+
+  // "geral" é o pote sem nome: sair do cofrinho é apagar o campo, não
+  // criar um cofrinho chamado Geral.
+  const destino = /^geral$/i.test(jar.trim()) ? '' : jar.trim();
+  const { error } = await supabaseAdmin.from('savings').update({ jar: destino }).eq('id', alvo.id);
+  if (error) throw error;
+  return { amount: Number(alvo.amount), de: alvo.jar || 'Geral', para: destino || 'Geral' };
+}
+
 module.exports = {
+  moverUltimoGuardado,
   converterUltimoEmParcelamento,
   converterUltimoEmRecorrente,
   apagarTudoDoTelefone,

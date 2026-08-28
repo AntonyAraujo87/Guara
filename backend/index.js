@@ -29,6 +29,7 @@ const {
   saveGoal,
   apagarTudoDoTelefone,
   converterUltimoEmParcelamento,
+  moverUltimoGuardado,
   converterUltimoEmRecorrente,
   supabaseAdmin,
 } = require('./db-service');
@@ -236,10 +237,28 @@ const currency = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maxi
 // Evita reprocessar a mesma mensagem se o WhatsApp reentregar o webhook (in-memory, por processo)
 const processedMessageIds = new Set();
 
+// Resposta ao "isso é todo mês?". Um "sim" sozinho não tem como ser entendido
+// por IA nenhuma — não há nada na frase pra classificar. Aqui é o texto cru que
+// decide, do mesmo jeito que a confirmação de apagar tudo.
+const SIM = /^(sim|isso|isso ai|isso aí|é sim|eh sim|s|ss|aham|uhum|claro|pode|pode deixar|pode sim|todo mes|todo mês|é mensal|eh mensal|confirmo|positivo|yes|ok|blz|beleza)[.!]*$/i;
+const NAO = /^(n|nao|não|nn|negativo|so esse mes|só esse mês|so esse|nao é|não é|nope|no)[.!]*$/i;
+
 async function processIncomingMessage(phone, text) {
   // Marca a conversa como aberta já na chegada, mesmo que a mensagem não tenha nada financeiro
   // (ex: um "oi" pra liberar o envio do código de verificação no dashboard).
   await ensureUser(phone);
+
+  const cru = String(text).trim();
+  if (SIM.test(cru)) {
+    await replyWhatsApp(phone, await responderConverter(phone, {
+      para: 'recorrente', dayOfMonth: 0, amount: 0, installments: 0,
+    }));
+    return;
+  }
+  if (NAO.test(cru)) {
+    await replyWhatsApp(phone, 'Beleza, deixo como gasto único mesmo. 👍');
+    return;
+  }
 
   // O tier gratuito do Gemini é 15 req/min. Se estourar (ou der timeout), a pessoa
   // não pode ficar sem resposta — silêncio parece que o bot morreu.
@@ -283,6 +302,14 @@ async function processIncomingMessage(phone, text) {
   // "Está parcelado" / "isso é todo mês": a pessoa reclassifica o que acabou de
   // mandar. Quase ninguém diz tudo de uma vez, e antes disto a segunda frase
   // não tinha onde encostar — o Guará respondia algo sem sentido.
+  if (intencao === 'mover_guardado') {
+    const r = await moverUltimoGuardado(phone, items[0].jar);
+    await replyWhatsApp(phone, r
+      ? `🐷 Pronto! Os R$ ${currency.format(r.amount)} agora estão no cofrinho *${r.para}*.`
+      : `Não achei nenhum "guardei" recente pra mover. 🤔`);
+    return;
+  }
+
   if (intencao === 'converter_ultimo') {
     await replyWhatsApp(phone, await responderConverter(phone, items[0]));
     return;
@@ -386,6 +413,44 @@ async function processIncomingMessage(phone, text) {
     return;
   }
 
+  // "guardar 15 nessa caixinha" não diz em qual. Antes ia tudo pro pote Geral,
+  // que é justamente onde ela NÃO queria. Pergunta só quando existe mais de um
+  // pote pra escolher: com nenhum ou com um só, perguntar seria burocracia.
+  const vago = items.find((i) => i.kind === 'guardado' && i.jarVago && !i.jar);
+  if (vago && items.length === 1) {
+    const potes = await savingsByJar(phone);
+    const nomeados = potes.filter((p) => p.nome !== 'Geral');
+    if (nomeados.length > 0) {
+      await replyWhatsApp(phone, [
+        `Em qual cofrinho eu guardo os R$ ${currency.format(vago.amount)}? 🐷`,
+        '',
+        ...nomeados.map((p) => `• *${p.nome}* — tem R$ ${currency.format(p.total)}`),
+        '',
+        'Me responde só o nome, tipo: _"' + nomeados[0].nome + '"_',
+        '_Ou diga "geral" pra deixar solto, fora dos cofrinhos._',
+      ].join('\n'));
+      return;
+    }
+  }
+
+  // "Adiantar primeira parcela do secador" virou uma despesa de R$ 0,00, que
+  // não quer dizer nada e ainda suja o extrato. Valor ausente significa que a
+  // frase não foi entendida — e a saída certa é perguntar, nunca gravar zero.
+  const semValor = items.filter(
+    (i) => ['transacao', 'guardado', 'divida'].includes(i.kind) && !(Number(i.amount) > 0)
+  );
+  if (semValor.length === items.length && items.length > 0) {
+    await replyWhatsApp(phone, [
+      'Entendi o que você quis dizer, mas não achei o valor. 🤔',
+      '',
+      'Me manda com o número, tipo:',
+      '_"paguei 50 no mercado"_',
+    ].join('\n'));
+    return;
+  }
+  // Os que têm valor seguem; os zerados ficam de fora em vez de virar R$ 0,00.
+  items = items.filter((i) => !semValor.includes(i));
+
   const saved = [];
   for (const item of items) {
     try {
@@ -407,7 +472,7 @@ async function processIncomingMessage(phone, text) {
   if (saved.length === 1 && saved[0].kind === 'guardado') {
     await replyWhatsApp(phone, await confirmarGuardado(phone, saved[0]));
   } else {
-    await replyWhatsApp(phone, formatConfirmation(saved));
+    await replyWhatsApp(phone, formatConfirmation(saved) + (await perguntaDeAssinatura(phone, saved)));
   }
 
   await convidarParaPainel(phone);
@@ -598,6 +663,25 @@ async function responderEditarRecorrente(phone, itens) {
     partes.push('', `⚠️ Não achei lançamento mensal de: *${perdidos.join('*, *')}*`);
   }
   return partes.join('\n');
+}
+
+// "24,90 Amazon Kindle" quase sempre se repete todo mês, mas assumir isso
+// sozinho criaria uma conta mensal que a pessoa não pediu — e ela só
+// descobriria no mês seguinte. Então pergunta, e um "sim" resolve.
+async function perguntaDeAssinatura(phone, saved) {
+  if (saved.length !== 1) return '';
+  const item = saved[0];
+  if (item.kind !== 'transacao' || !item.assinatura) return '';
+
+  // Se já existe recorrente com esse nome, a pergunta seria repetitiva —
+  // e a resposta "sim" só sobrescreveria o que já está certo.
+  const jaTem = await listRecurring(phone);
+  const nome = (item.description || '').toLowerCase();
+  if (jaTem.some((r) => nome.includes(r.description.toLowerCase()) || r.description.toLowerCase().includes(nome))) {
+    return '';
+  }
+
+  return `\n\n_Isso é todo mês?_ Responde *sim* que eu deixo automático. 🔁`;
 }
 
 async function responderConverter(phone, item) {
@@ -976,6 +1060,15 @@ app.post('/meta-webhook', webhookLimiter, async (req, res) => {
         await processIncomingMessage(phone, text);
       } catch (err) {
         console.error(`Falha ao tratar mensagem ${messageId || '(sem id)'}:`, err.message);
+        // Silêncio é a pior resposta possível: a pessoa não sabe se o Guará
+        // morreu, se ela escreveu errado, ou se o gasto foi anotado. A IA do
+        // Google cai com alguma frequência no plano gratuito, e quando isso
+        // acontece nas três tentativas ninguém avisava ninguém.
+        try {
+          await replyWhatsApp(phone, `Ops, deu erro aqui do meu lado. 😕\n\nMe manda essa mensagem de novo, por favor — não anotei nada ainda.`);
+        } catch (falhaAoAvisar) {
+          console.error('Nem o aviso de erro saiu:', falhaAoAvisar.message);
+        }
       }
     }
   } catch (err) {

@@ -33,7 +33,10 @@ Gatilhos: "quanto gastei esse mês", "qual meu saldo", "quanto entrou essa seman
 - category só quando a pergunta citar uma categoria específica (ex: "quanto gastei com comida" → "Alimentação"). Senão deixe string vazia.
 
 5. Guardado (dinheiro que a pessoa separou/poupou — NÃO é gasto, é dinheiro que continua sendo dela):
-{"kind": "guardado", "amount": number, "direction": "guardar" | "retirar", "jar": string, "description": string}
+{"kind": "guardado", "amount": number, "direction": "guardar" | "retirar", "jar": string, "jarVago": boolean, "description": string}
+"jar" é o NOME do cofrinho, e só sai preenchido quando a pessoa DIZ o nome: "no cofrinho da viagem" -> jar "Viagem", "guardar 15 no secador" -> jar "Secador".
+"jarVago" é true quando ela fala de cofrinho SEM dizer qual: "guardar 15 nessa caixinha", "põe 50 no cofrinho", "guarda 20 na caixinha". Nesses casos jar fica "" e o sistema pergunta qual.
+Se ela não mencionar cofrinho nenhum ("guardei 200"), jar fica "" e jarVago é false.
 Gatilhos de "guardar": "guardei 200", "separei 100", "poupei 50", "coloquei 300 na poupança", "juntei 80", "reservei 150", "botei 200 no cofrinho".
 Gatilhos de "retirar": "tirei 100 do guardado", "usei 200 da poupança", "peguei 50 do cofrinho", "resgatei 300".
 IMPORTANTE: "guardei 200" NUNCA é despesa. É sempre kind "guardado".
@@ -74,13 +77,20 @@ Gatilhos: "na verdade é dia 5", "muda o salário pro dia 10", "o aluguel agora 
 10. Parcela paga (a pessoa avisa que quitou uma parcela):
 {"kind": "parcela_paga", "description": string}
 Gatilhos: "paguei a parcela da TV", "quitei a parcela do celular", "paguei a parcela desse mês", "parcela paga".
-- description é o nome da compra, se a pessoa citar (ex: "TV"). Deixe string vazia se ela não disser qual.
+- ADIANTAR também é pagar: "adiantar a primeira parcela do secador", "antecipei a parcela do sofá", "vou adiantar duas do celular", "quitar a parcela". O verbo muda, o fato é o mesmo — a parcela foi paga.
+- "primeira", "segunda", "próxima", "desse mês" são só o modo de apontar a parcela; não mudam o kind e não entram na description.
+- VALOR NA FRASE NÃO VIRA GASTO NOVO: "pagar 50 reais do secador", "paguei 200 da TV", "mandei 50 pro sofá" são parcela_paga quando a coisa citada é algo parcelado. O valor só confirma qual é — a parcela já tem preço cadastrado. Anotar como transação nova cobraria a pessoa duas vezes.
+- description é o nome da compra, se a pessoa citar (ex: "TV", "secador"). Deixe string vazia se ela não disser qual.
 
 11. Instalar (a pessoa quer o app no celular, ou pergunta se existe app):
 {"kind": "instalar"}
 Gatilhos: "tem app?", "como instalo", "quero o app no celular", "tem pra baixar", "onde baixo", "tem aplicativo", "quero na tela inicial", "manda o link do app", "da pra instalar".
 
-12. Converter o último (a pessoa diz que o que ACABOU de registrar é, na verdade, parcelado ou mensal):
+12. Mover o último guardado de cofrinho (a pessoa responde só o NOME de um cofrinho, ou diz que era em outro):
+{"kind": "mover_guardado", "jar": string}
+Gatilhos: uma mensagem que é só um nome logo depois de guardar ("Secador", "Viagem", "geral"), "na verdade era no cofrinho da viagem", "põe no secador", "muda pro geral".
+
+13. Converter o último (a pessoa diz que o que ACABOU de registrar é, na verdade, parcelado ou mensal):
 {"kind": "converter_ultimo", "para": "parcelamento" | "recorrente", "installments": number, "dayOfMonth": number, "amount": number}
 Gatilhos de PARCELAMENTO: "está parcelado", "isso é parcelado", "esse é em 6x", "parcelei esse", "dividi em 3", "essa conta é parcelada", "em 10 vezes", "é em 12x", "6x", "3 vezes".
 Gatilhos de RECORRENTE: "isso é todo mês", "essa conta é mensal", "é fixo", "vem todo mês", "todo mês tem essa", "é recorrente", "essa é sempre".
@@ -120,6 +130,8 @@ Regras:
 - Se não conseguir identificar NENHUM item financeiro na mensagem (ex: só um cumprimento, uma pergunta sem contexto financeiro), retorne uma lista vazia: [].
 - description é um resumo curto (máx 6 palavras) de cada item.
 - REGRA IMPORTANTE: pergunta NÃO é registro. "quanto gastei com uber" é consulta, não uma despesa de uber. Se a frase pede uma informação em vez de contar um fato consumado, é sempre "consulta".
+- ASSINATURA: quando a descrição é um serviço que quase sempre é mensal (Netflix, Spotify, Amazon, Kindle, Prime, Apple, iCloud, Google One, Disney, HBO, Max, YouTube Premium, Paramount, Globoplay, Deezer, Canva, ChatGPT, academia, plano de saúde, seguro, internet, telefone), marque "assinatura": true no item de transação. NÃO transforme em recorrente sozinho — quem decide é a pessoa, o sistema só pergunta.
+- CONFIRMAÇÃO SOLTA: "sim", "isso", "é sim", "todo mes", "pode deixar", "aham" logo depois de um gasto são resposta a essa pergunta. Devolva {"kind": "converter_ultimo", "para": "recorrente", "dayOfMonth": 0, "amount": 0}. Já "não", "nao", "nem", "só esse mês" devolvem {"kind": "conversa"}.
 - REGRA IMPORTANTE: guardar dinheiro NÃO é despesa. "guardei 200" é kind "guardado", nunca "transacao".
 - Quando a mensagem for "ajuda", "meta", "instalar", "apagar_dados", "converter_ultimo" ou "desfazer", retorne SÓ esse item, sozinho na lista.
 - QUEM ESCREVE É GENTE COMUM, com pressa. Frase curta, sem pontuação, sem acento, com erro de digitação e sem contexto é o NORMAL, não a exceção. "iptu 200", "ta parcelado", "6x", "pago todo mes" são mensagens legítimas e você deve entendê-las. Nunca devolva lista vazia porque a frase parecia incompleta demais: escolha a intenção mais provável e deixe os campos que faltam em 0 ou string vazia — o sistema pergunta o que faltar.
@@ -196,6 +208,9 @@ async function extractItems(rawText, categoriasExtras = []) {
         if (item.kind === 'ajuda' || item.kind === 'desfazer' || item.kind === 'instalar') {
           return { kind: item.kind };
         }
+        if (item.kind === 'mover_guardado') {
+          return { kind: 'mover_guardado', jar: (item.jar || '').trim() };
+        }
         if (item.kind === 'converter_ultimo') {
           return {
             kind: 'converter_ultimo',
@@ -229,6 +244,7 @@ async function extractItems(rawText, categoriasExtras = []) {
             amount: Math.abs(Number(item.amount)),
             direction: item.direction === 'retirar' ? 'retirar' : 'guardar',
             jar: (item.jar || '').trim(),
+            jarVago: item.jarVago === true,
             description: item.description || rawText.slice(0, 80),
           };
         }
@@ -287,6 +303,9 @@ async function extractItems(rawText, categoriasExtras = []) {
           amount: Number(item.amount),
           type: item.type,
           category: item.category,
+          // Serviço que costuma ser mensal. Só um palpite: quem decide é a
+          // pessoa, e o backend usa isto apenas para perguntar.
+          assinatura: item.assinatura === true,
           description: item.description || rawText.slice(0, 80),
         };
       });
