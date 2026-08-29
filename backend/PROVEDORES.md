@@ -13,12 +13,33 @@ gemini-flash-lite (3 tentativas) → gemini-flash (1) → leitura sem IA
 Cada chave que você acrescentar entra na fila **antes** da leitura sem IA. Nenhuma
 chave nova = nada muda.
 
+## A Gemini é reserva, não titular
+
+Assim que existir **qualquer outro provedor com chave**, a Gemini vai automaticamente
+pro **fim** da fila de texto:
+
+```
+groq → cerebras → github → cloudflare → gemini → leitura sem IA
+```
+
+O motivo é concreto: **a Gemini é a única que lê áudio e foto**. Uma chamada dela
+gasta em texto — coisa que qualquer um da fila faria — é uma chamada roubada de algo
+que só ela faz. Ela continua sendo a primeira e única para mídia, porque ali não há
+escolha.
+
+Se as outras acabarem a cota, o texto cai nela normalmente. É reserva, não
+aposentadoria.
+
+Sozinha, nada muda: não faz sentido poupar o único provedor que existe.
+
+Para forçar outra ordem, use `ORDEM_IA` — ela manda mais que o automático.
+
 ---
 
 ## Como conferir o que está valendo
 
 ```bash
-cd ~/guara/deploy && sudo docker compose logs backend | grep "IA na fila"
+cd ~/guara/deploy && sudo docker compose logs backend | grep -E "IA para (TEXTO|AUDIO)"
 ```
 
 Ou, dentro da pasta `backend` na sua máquina:
@@ -130,7 +151,7 @@ cd ~/guara/deploy && sudo docker compose restart backend
 E confira quem entrou:
 
 ```bash
-sudo docker compose logs backend | grep "IA na fila"
+sudo docker compose logs backend | grep -E "IA para (TEXTO|AUDIO)"
 ```
 
 ---

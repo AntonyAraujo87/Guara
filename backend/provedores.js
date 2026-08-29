@@ -96,13 +96,47 @@ const CATALOGO = {
 // digitação de uma variável não pode derrubar o app.
 function ordemConfigurada() {
   const bruto = String(process.env.ORDEM_IA || '').trim();
-  if (!bruto) return ORDEM_PADRAO;
-  const pedidos = bruto.split(',').map((n) => n.trim().toLowerCase()).filter((n) => CATALOGO[n]);
-  if (pedidos.length === 0) return ORDEM_PADRAO;
-  // Quem não foi citado vai pro fim, na ordem padrão: assim configurar um
-  // favorito não desliga os outros sem querer.
-  const resto = ORDEM_PADRAO.filter((n) => !pedidos.includes(n));
-  return [...pedidos, ...resto];
+  if (bruto) {
+    const pedidos = bruto.split(',').map((n) => n.trim().toLowerCase()).filter((n) => CATALOGO[n]);
+    if (pedidos.length > 0) {
+      // Quem não foi citado vai pro fim, na ordem padrão: assim configurar um
+      // favorito não desliga os outros sem querer.
+      const resto = ORDEM_PADRAO.filter((n) => !pedidos.includes(n));
+      return [...pedidos, ...resto];
+    }
+  }
+  return ordemComGeminiDeReserva();
+}
+
+// Provedores que sabem ler áudio e foto. Hoje só a Gemini — os gratuitos de
+// inferência rápida servem texto e mais nada.
+const MULTIMODAIS = new Set(['gemini']);
+
+// A cota da Gemini vale MAIS que a dos outros, e por um motivo concreto: ela é
+// a única que lê recado de voz e foto de comprovante. Uma chamada dela gasta em
+// texto — que qualquer um da fila faria — é uma chamada roubada de algo que só
+// ela faz.
+//
+// Então, assim que existir outro provedor com chave, a Gemini vai pro FIM da
+// fila de TEXTO. Ela continua sendo a primeira (e única) para mídia, porque ali
+// não há escolha. Se as outras acabarem, o texto cai nela normalmente — é
+// reserva, não aposentadoria.
+//
+// Sozinha, nada muda: não faz sentido "poupar" o único provedor que existe.
+function ordemComGeminiDeReserva() {
+  const comChave = ORDEM_PADRAO.filter((nome) => {
+    const p = CATALOGO[nome];
+    if (!process.env[p.chaveEnv]) return false;
+    if (p.tipo === 'openai' && !p.base) return false;
+    return true;
+  });
+
+  const outros = comChave.filter((n) => !MULTIMODAIS.has(n));
+  if (outros.length === 0) return ORDEM_PADRAO;
+
+  const reservados = ORDEM_PADRAO.filter((n) => MULTIMODAIS.has(n));
+  const resto = ORDEM_PADRAO.filter((n) => !MULTIMODAIS.has(n));
+  return [...resto, ...reservados];
 }
 
 // Os provedores que de fato podem ser chamados agora: têm chave, e (no caso da
@@ -184,8 +218,17 @@ async function chamarOpenAICompativel({ base, chave, modelo, timeout }, sistema,
   return texto;
 }
 
+// Quem, dos ativos, sabe ler audio e foto. Se der [], midia nao funciona —
+// e isso precisa aparecer no boot, nao ser descoberto por um usuario mandando
+// um recado de voz e levando "nao consegui ouvir".
+function multimodaisAtivos() {
+  return provedoresAtivos().filter((p) => MULTIMODAIS.has(p.nome)).map((p) => p.nome);
+}
+
 module.exports = {
   CATALOGO,
+  MULTIMODAIS,
+  multimodaisAtivos,
   ORDEM_PADRAO,
   ordemConfigurada,
   provedoresAtivos,

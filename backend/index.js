@@ -5,7 +5,13 @@ const axios = require('axios');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { extractItems, transcreverAudio, lerImagem, quemEstaNaFila } = require('./ai-service');
+const {
+  extractItems,
+  transcreverAudio,
+  lerImagem,
+  quemEstaNaFila,
+  quemLeMidia,
+} = require('./ai-service');
 const { baixarAudio, baixarImagem } = require('./media-service');
 const { lerSemIA } = require('./leitura-simples');
 const {
@@ -1082,6 +1088,21 @@ app.listen(PORT || 3001, () => {
   if (fila.length === 0) {
     console.error('ATENCAO: nenhum provedor de IA configurado. So a leitura simples vai funcionar.');
   } else {
-    console.log('IA na fila: ' + fila.map((p) => p.provedor + ' (' + p.modelos.join(', ') + ')').join(' -> '));
+    console.log('IA para TEXTO: ' + fila.map((p) => p.provedor).join(' -> '));
+    for (const p of fila) console.log('   ' + p.provedor + ': ' + p.modelos.join(', '));
+  }
+
+  // Midia e outra fila, com outro criterio: nao ha escolha, so a Gemini le
+  // audio e foto. Por isso ela vai pro FIM da fila de texto assim que houver
+  // outro provedor — cada chamada dela gasta em texto e uma chamada roubada de
+  // algo que so ela faz.
+  const midia = quemLeMidia();
+  if (midia.length === 0) {
+    console.error('ATENCAO: nenhum provedor le audio/foto. Midia vai falhar e pedir texto.');
+  } else {
+    console.log('IA para AUDIO e FOTO: ' + midia.join(', '));
+    if (fila.length > 1 && fila[fila.length - 1].provedor === midia[0]) {
+      console.log('   (guardada pro fim no texto de proposito, pra sobrar cota pra midia)');
+    }
   }
 });

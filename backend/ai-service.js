@@ -15,7 +15,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // A fila de quem pode responder vive em provedores.js. Sem chave nova no .env,
 // ela contem exatamente os dois modelos da Gemini de sempre — acrescentar
 // opcao nao pode mudar o que ja funciona.
-const { filaDeTentativas, chamarOpenAICompativel, provedoresAtivos } = require('./provedores');
+const {
+  filaDeTentativas,
+  chamarOpenAICompativel,
+  provedoresAtivos,
+  multimodaisAtivos,
+} = require('./provedores');
 
 // A Gemini continua sendo a unica para AUDIO e FOTO: os outros gratuitos so
 // falam texto. Por isso este nome fica fixo aqui.
@@ -1185,9 +1190,17 @@ function quemEstaNaFila() {
   }));
 }
 
+// Quem le audio e foto. Hoje so a Gemini; se um dia a lista ficar vazia, media
+// para de funcionar e e melhor descobrir no boot do que por um usuario
+// mandando recado de voz.
+function quemLeMidia() {
+  return multimodaisAtivos();
+}
+
 module.exports = {
   transcreverAudio,
   lerImagem,
   extractItems,
   quemEstaNaFila,
+  quemLeMidia,
 };
