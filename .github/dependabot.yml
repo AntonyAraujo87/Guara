@@ -52,6 +52,25 @@ updates:
           - minor
           - patch
 
+    # Dois majors que o ecossistema ainda nao acompanha. Testados em
+    # 29/08/2026, os dois quebram o lint do frontend — e o lint existe porque
+    # um hook depois de early return derrubou o painel por mais de um dia,
+    # com o servidor respondendo 200 o tempo todo.
+    #
+    #   typescript 7  -> typescript-eslint aborta: "does not support TS 7.0"
+    #                    (typescript-eslint#10940)
+    #   eslint 10     -> eslint-plugin-react, empacotado dentro do
+    #                    eslint-config-next, chama getFilename, API removida
+    #
+    # Sao bloqueios de terceiros, nao nossos. Ignorar SO o major mantem os
+    # patches de seguranca chegando — que e o motivo de o Dependabot existir.
+    # Tire estas linhas quando o eslint-config-next atualizar o que empacota.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+
   # As ações do GitHub também envelhecem, e são elas que compilam e publicam.
   - package-ecosystem: github-actions
     directory: /
