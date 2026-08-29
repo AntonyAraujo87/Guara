@@ -24,14 +24,14 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Trava antes de compilar. Um hook chamado depois de um return derruba o
       # painel inteiro em tempo de execucao e so aparece pra quem esta logado —
       # o build passa numa boa. A regra react-hooks/rules-of-hooks pega isso em
       # segundos; sem rodar o lint, ela nunca era acionada.
       - name: Preparar o Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -72,17 +72,17 @@ jobs:
           echo "Imagens: ghcr.io/$DONO/guara-backend e -frontend"
 
       - name: Entrar no registro do GitHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRO }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Preparar o buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Backend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           push: true
@@ -93,7 +93,7 @@ jobs:
           cache-to: type=gha,scope=backend,mode=max
 
       - name: Frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: true
