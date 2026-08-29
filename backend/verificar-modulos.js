@@ -82,6 +82,35 @@ for (const [, lista, modulo] of requires) {
   }
 }
 
+// ── O DOCKERFILE LISTA OS ARQUIVOS PELO NOME ────────────────────────
+//
+// Nao e "COPY . ." de proposito: assim .env, node_modules e testes nao entram
+// na imagem. O preco e que um arquivo .js novo que ninguem acrescentou aqui
+// simplesmente nao existe dentro do container, e o backend entra em loop de
+// restart com "Cannot find module" — ja aconteceu, com o WhatsApp fora do ar.
+//
+// Nenhum lint pega isso: o codigo esta perfeito, so nao foi junto.
+// Dentro da imagem construida o Dockerfile nao existe — ele nao e copiado, e
+// nem deve ser. Esta checagem e de CI, onde o repositorio inteiro esta em disco;
+// rodando dentro do container ela simplesmente nao se aplica.
+const caminhoDockerfile = path.join(__dirname, 'Dockerfile');
+const dockerfile = fs.existsSync(caminhoDockerfile)
+  ? fs.readFileSync(caminhoDockerfile, 'utf8')
+  : null;
+const naImagem = dockerfile
+  ? fs.readdirSync(__dirname).filter((f) => f.endsWith('.js')).filter((f) => !dockerfile.includes(f))
+  : [];
+
+if (!dockerfile) {
+  console.log('  --       sem Dockerfile por perto (rodando dentro da imagem); pulei essa checagem');
+} else if (naImagem.length) {
+  console.error(`  FALTA    no Dockerfile: ${naImagem.join(', ')}`);
+  console.error('           o container subiria sem esse(s) arquivo(s).');
+  problemas += naImagem.length;
+} else {
+  console.log('  ok       todos os .js estao no COPY do Dockerfile');
+}
+
 if (problemas > 0) {
   console.error(`\n  ${problemas} problema(s) — isto derrubaria o backend ao subir.`);
   process.exit(1);

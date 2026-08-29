@@ -53,6 +53,15 @@ jobs:
           npm ci --prefer-offline --no-audit --fund=false
           node verificar-modulos.js
 
+      - name: Lint do backend
+        working-directory: backend
+        run: |
+          # O backend nao tinha lint, so o frontend. Na primeira execucao ele
+          # achou tres ReferenceError em producao e um backspace invisivel
+          # dentro de uma regex, que matava a resolucao de "esse ai" em
+          # silencio. node --check e verificar-modulos.js nao pegam nada disso.
+          npx eslint .
+
       - name: Montar o nome da imagem
         # O registro do GitHub só aceita nome em minúsculas, e o usuário tem
         # maiúsculas (AntonyAraujo87). Sem converter, o envio falha com

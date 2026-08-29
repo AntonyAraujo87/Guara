@@ -52,7 +52,8 @@ const {
   listaDeCarteiras
 } = require('./formato');
 const {
-  PAINEL_URL
+  PAINEL_URL,
+  NOME_DO_TIPO,
 } = require('./mensagens');
 
 async function responderConsulta(phone, consulta) {

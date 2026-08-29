@@ -29,6 +29,7 @@ const {
   MSG_APAGAR_CONFIRMA,
   MSG_APAGAR_CANCELADO,
   MSG_AJUDA,
+  MSG_LEMBRETE_PAINEL,
   TIPOS_IGNORADOS,
   msgTipoNaoSuportado,
 } = require('./mensagens');
@@ -165,16 +166,23 @@ const processedMessageIds = new Set();
 const SIM = /^(sim|isso|isso ai|isso aí|é sim|eh sim|s|ss|aham|uhum|claro|pode|pode deixar|pode sim|todo mes|todo mês|é mensal|eh mensal|confirmo|positivo|yes|ok|blz|beleza)[.!]*$/i;
 const NAO = /^(n|nao|não|nn|negativo|so esse mes|só esse mês|so esse|nao é|não é|nope|no)[.!]*$/i;
 
+// De onde a frase veio.
+//
+// Não é detalhe: texto transcrito de áudio ou lido de uma foto NÃO foi escrito
+// pela pessoa — pode ter sido escrito por quem montou o comprovante. Serve pra
+// anotar um gasto; não serve pra destravar exclusão de tudo.
+const ORIGENS_DIGITADAS = new Set(['texto', 'painel']);
+
 // Resolve em qual carteira esta mensagem vai cair, e roda o atendimento
 // inteiro dentro desse contexto. Quem nunca criou uma segunda carteira nem
 // percebe: cai sempre na padrão.
-async function processIncomingMessage(phone, text) {
+async function processIncomingMessage(phone, text, origem = 'texto') {
   const { primeiraVez } = await ensureUser(phone);
   const { ativa } = await contextoDeCarteira(phone);
-  return comCarteira(ativa, () => atenderMensagem(phone, text, ativa, primeiraVez));
+  return comCarteira(ativa, () => atenderMensagem(phone, text, ativa, primeiraVez, origem));
 }
 
-async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) {
+async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false, origem = 'texto') {
   // Primeiro "oi" da vida da pessoa: apresentação, sempre — não importa o que
   // ela escreveu nem se a IA entendeu.
   //
@@ -341,6 +349,19 @@ async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) 
   // que a IA devolveu: interpretar "apaga tudo" errado custa caro demais pra
   // depender de um modelo. Só a frase exata destrava.
   if (intencao === 'apagar_dados') {
+    // Apagar tudo exige frase DIGITADA. Uma foto de um papel escrito
+    // "APAGAR TUDO", ou um áudio em que alguém diz isso ao fundo, chegariam
+    // aqui como texto comum — e apagariam a vida financeira de uma pessoa por
+    // uma frase que ela nunca escreveu.
+    if (text.trim().toUpperCase() === 'APAGAR TUDO' && !ORIGENS_DIGITADAS.has(origem)) {
+      await replyWhatsApp(phone, [
+        'Entendi que você quer apagar tudo — mas isso eu só aceito digitado. 🔒',
+        '',
+        'Escreve *APAGAR TUDO* aqui na conversa, com as suas mãos.',
+      ].join(NL));
+      return;
+    }
+
     if (text.trim().toUpperCase() === 'APAGAR TUDO' && jaFoiAvisado(phone)) {
       try {
         const r = await apagarTudoDoTelefone(phone);
@@ -375,7 +396,7 @@ async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) 
 
   // A confirmação chega como mensagem solta, sem a IA reconhecer como intenção.
   // Sem isto, quem escreve "APAGAR TUDO" receberia "não entendi".
-  if (text.trim().toUpperCase() === 'APAGAR TUDO') {
+  if (text.trim().toUpperCase() === 'APAGAR TUDO' && ORIGENS_DIGITADAS.has(origem)) {
     await replyWhatsApp(phone, MSG_APAGAR_CANCELADO);
     return;
   }
@@ -459,15 +480,21 @@ async function atenderMensagem(phone, text, carteiraAtiva, primeiraVez = false) 
   // "Adiantar primeira parcela do secador" virou uma despesa de R$ 0,00, que
   // não quer dizer nada e ainda suja o extrato. Valor ausente significa que a
   // frase não foi entendida — e a saída certa é perguntar, nunca gravar zero.
+  // Parcelamento entra na mesma regra: `installments` zerado quer dizer que o
+  // numero de parcelas nao passou na validacao (veio ausente, negativo, ou
+  // grande demais pra ser verdade). Perguntar e melhor que inventar seis vezes.
   const semValor = items.filter(
-    (i) => ['transacao', 'guardado', 'divida'].includes(i.kind) && !(Number(i.amount) > 0)
+    (i) =>
+      (['transacao', 'guardado', 'divida'].includes(i.kind) && !(Number(i.amount) > 0)) ||
+      (i.kind === 'parcelamento' && !(Number(i.installments) > 0))
   );
   if (semValor.length === items.length && items.length > 0) {
     await replyWhatsApp(phone, [
-      'Entendi o que você quis dizer, mas não achei o valor. 🤔',
+      'Entendi o que você quis dizer, mas não achei o número. 🤔',
       '',
-      'Me manda com o número, tipo:',
+      'Me manda com o valor, tipo:',
       '_"paguei 50 no mercado"_',
+      '_"comprei uma TV em 6x de 200"_',
     ].join('\n'));
     return;
   }
@@ -559,13 +586,6 @@ async function convidarParaPainel(phone) {
 // segunda carteira nunca vê nada disto — nem uma linha a mais nas respostas.
 
 
-const NOME_DO_TIPO = {
-  lancamento: 'lançamento',
-  divida: 'dívida',
-  recorrente: 'conta mensal',
-  parcelamento: 'parcelamento',
-  guardado: 'guardado',
-};
 
 
 // Handshake de verificação do webhook da Meta (GET, chamado quando se salva a URL no console)
@@ -650,7 +670,7 @@ async function tratarMidia(phone, message) {
     ? `🎧 Entendi: _"${texto}"_`
     : `📸 Li no comprovante: _"${texto}"_`);
 
-  await processIncomingMessage(phone, texto);
+  await processIncomingMessage(phone, texto, ehAudio ? 'audio' : 'imagem');
 }
 
 
@@ -669,7 +689,16 @@ app.post('/meta-webhook', webhookLimiter, async (req, res) => {
       if (messageId) {
         if (processedMessageIds.has(messageId)) continue;
         processedMessageIds.add(messageId);
-        if (processedMessageIds.size > 2000) processedMessageIds.clear();
+        // Descarta a metade mais velha em vez de esvaziar tudo. Com `.clear()`,
+        // a mensagem processada um segundo antes da limpeza voltava a ser
+        // desconhecida — e uma reentrega do WhatsApp naquele instante gravava o
+        // gasto de novo. Set em JS mantém a ordem de inserção, então os 1000
+        // mais recentes são exatamente os que ainda podem ser reentregues.
+        if (processedMessageIds.size > 2000) {
+          const recentes = [...processedMessageIds].slice(-1000);
+          processedMessageIds.clear();
+          for (const id of recentes) processedMessageIds.add(id);
+        }
       }
 
       const phone = message.from;
@@ -696,7 +725,7 @@ app.post('/meta-webhook', webhookLimiter, async (req, res) => {
 
         const text = message.text?.body;
         if (!text) continue;
-        await processIncomingMessage(phone, text);
+        await processIncomingMessage(phone, text, 'texto');
       } catch (err) {
         console.error(`Falha ao tratar mensagem ${messageId || '(sem id)'}:`, err.message);
         // Silêncio é a pior resposta possível: a pessoa não sabe se o Guará
@@ -832,7 +861,7 @@ app.post('/api/mensagem', painelLimiter, async (req, res) => {
     if (!texto) return res.status(400).json({ error: 'Escreva alguma coisa.' });
     if (texto.length > 1000) return res.status(400).json({ error: 'Mensagem longa demais.' });
 
-    const respostas = await coletandoRespostas(() => processIncomingMessage(perfil.phone, texto));
+    const respostas = await coletandoRespostas(() => processIncomingMessage(perfil.phone, texto, 'painel'));
     res.json({ respostas });
   } catch (err) {
     console.error('Erro no /api/mensagem:', err.message);
@@ -992,5 +1021,55 @@ app.use(
     },
   })
 );
+
+
+// ── A ÚLTIMA REDE ──────────────────────────────────────────────────
+//
+// Sem este bloco, um erro que escapa de um try/catch cai no handler padrão do
+// Express — que, fora de NODE_ENV=production, devolve a STACK INTEIRA pro
+// cliente. Medido: `throw new Error('SUPABASE_SERVICE_ROLE_KEY=...')` numa rota
+// voltava com a mensagem e os caminhos do servidor no corpo da resposta.
+//
+// Depender do NODE_ENV pra isso é frágil: basta alguém subir o container sem a
+// variável e o vazamento volta calado. Então o handler é explícito, e o
+// NODE_ENV no Dockerfile é só a segunda camada.
+//
+// Precisa dos quatro argumentos: é assim que o Express reconhece um handler de
+// erro. Tirar o `_next` quebra o reconhecimento, mesmo sem usá-lo.
+app.use((err, req, res, _next) => {
+  // Um número curto pra ligar o que a pessoa viu ao que ficou no log. Sem isto,
+  // investigar um erro relatado é procurar agulha no palheiro.
+  const marca = crypto.randomBytes(4).toString('hex');
+
+  // No servidor, tudo. Aqui é onde se investiga.
+  console.error(`[${marca}] erro não tratado em ${req.method} ${req.path}:`, err?.stack || err);
+
+  if (res.headersSent) return;
+
+  // Pro cliente, nada além do necessário. Nem mensagem do erro (pode conter
+  // nome de tabela, trecho de SQL ou valor de variável), nem stack, nem tipo.
+  res.status(500).json({
+    error: 'Algo deu errado aqui do nosso lado. Tenta de novo em instantes.',
+    codigo: marca,
+  });
+});
+
+// Uma promise rejeitada sem catch DERRUBA o processo no Node moderno. Num
+// servidor de WhatsApp isso significa: mensagens em voo perdidas, e o container
+// reiniciando por causa de um erro que talvez nem importasse.
+//
+// Registrar e seguir é o certo aqui. O contrário — morrer — é o que um atacante
+// procuraria: uma requisição que provoque a rejeição certa vira desligamento.
+process.on('unhandledRejection', (motivo) => {
+  console.error('Promise rejeitada sem tratamento:', motivo?.stack || motivo);
+});
+
+// Exceção não capturada é outra história: o processo pode estar num estado
+// inconsistente, e continuar servindo seria pior. Registra e sai com código de
+// erro, deixando o Docker subir um processo limpo.
+process.on('uncaughtException', (erro) => {
+  console.error('Exceção não capturada — encerrando pra subir limpo:', erro?.stack || erro);
+  process.exit(1);
+});
 
 app.listen(PORT || 3001, () => console.log(`Servidor rodando na porta ${PORT || 3001}`));

@@ -8,6 +8,11 @@
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
+// O endereco do painel vem de mensagens.js. Sem este require, montar a
+// confirmacao de um parcelamento estourava ReferenceError: a funcao usava
+// PAINEL_URL que nunca chegou aqui na hora de quebrar o index.js em modulos.
+const { PAINEL_URL } = require('./mensagens');
+
 // "2026-09-01" -> "setembro/2026"
 function nomeDoMes(dueMonth) {
   const [ano, mes] = dueMonth.split('-');

@@ -56,18 +56,48 @@ function traduzErroAuth(msg: string): string {
 export // Formato que a Meta manda no webhook pra números brasileiros: DDI(55) + DDD(2) + número(8), SEM o 9 extra do celular.
 const BR_PHONE_REGEX = /^55\d{10}$/;
 
+// Quanto tempo esperar antes de desistir de uma chamada.
+//
+// Sem teto, um 3G que abre a conexão e some deixa a promise pendurada PARA
+// SEMPRE: o botão fica girando, o `finally` que devolve o botão nunca roda, e a
+// única saída é recarregar a página. Quarenta segundos é folgado — a rota mais
+// lenta é a que chama a IA, medida em até 30s no pior caso.
+const TETO_ESPERA_MS = 40_000;
+
 export // POST autenticado no backend. Fica no escopo do módulo porque duas telas
 // diferentes precisam: a de vincular número e a caixa de conversa do painel.
 async function authedFetch(path: string, body: object) {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => ({}));
-  return { ok: res.ok, json };
+
+  // AbortSignal.timeout existe em todo navegador que roda este app, mas o
+  // encadeamento `?.` cobre o caso de um WebView antigo: lá a chamada segue sem
+  // teto, que é o comportamento de antes — pior que o novo, melhor que quebrar.
+  const corte = AbortSignal.timeout?.(TETO_ESPERA_MS);
+
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+      signal: corte,
+    });
+    const json = await res.json().catch(() => ({}));
+    return { ok: res.ok, json };
+  } catch (erro) {
+    // Estourar o tempo e cair a rede chegam aqui do mesmo jeito. Devolvemos o
+    // mesmo formato de sempre pra quem chama não precisar de um caminho novo —
+    // e com uma frase que diz o que aconteceu, em vez de um erro cru.
+    const expirou = erro instanceof DOMException && erro.name === 'TimeoutError';
+    return {
+      ok: false,
+      json: {
+        error: expirou
+          ? 'Demorou demais e eu desisti de esperar. Confere sua conexão e tenta de novo.'
+          : 'Não consegui falar com o servidor. Confere sua conexão e tenta de novo.',
+      },
+    };
+  }
 }
 
 // As classes dos campos de formulário. Compartilhadas porque três telas usam

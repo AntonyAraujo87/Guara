@@ -695,6 +695,7 @@ const LIMITE_TEXTO = 1000;
 
 // Caracteres de controle e invisíveis (zero-width) servem pra esconder instrução
 // no meio de um texto que parece inofensivo. Nada disso ocorre em mensagem legítima.
+// eslint-disable-next-line no-control-regex -- pegar caractere de controle e exatamente o objetivo desta regex
 const INVISIVEIS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u2028\u2029\u202A-\u202E\uFEFF]/g;
 
 // Quantos dias atrás o gasto aconteceu. Fora da faixa vira 0: um número
@@ -720,6 +721,39 @@ function diasValidos(bruto) {
   return Number.isFinite(n) && n > 0 && n <= 365 ? n : 0;
 }
 
+// Quantas parcelas. Fora de 1..72 vira 0, e 0 faz o Guara PERGUNTAR em vez de
+// chutar — mesma regra do valor zero.
+//
+// Sem este teto, um `installments: 100000` vindo do modelo criava CEM MIL
+// linhas na tabela de parcelas, uma por mes, ate o ano 10.000. E um numero
+// negativo deixava a lista vazia e estourava TypeError em `linhas[0]`.
+// Setenta e dois e seis anos: acima disso nao e parcelamento, e engano.
+const MAX_PARCELAS = 72;
+
+function parcelasValidas(bruto) {
+  const n = Math.round(Number(bruto));
+  return Number.isFinite(n) && n >= 1 && n <= MAX_PARCELAS ? n : 0;
+}
+
+// Dia do mes de um gasto fixo. Fora de 1..31 cai no dia 1: melhor lancar no
+// comeco do mes do que nunca lancar, que e o que acontecia com dia 99.
+function diaDoMesValido(bruto) {
+  const n = Math.round(Number(bruto));
+  return Number.isFinite(n) && n >= 1 && n <= 31 ? n : 1;
+}
+
+// Texto que veio do modelo e vai pro banco e pra tela.
+//
+// O `sanitizarTexto` cuidava so da mensagem que ENTRA. O que SAI nao tinha
+// teto: uma descricao de cem mil letras era gravada inteira, estourava a
+// mensagem do WhatsApp (limite de 4096) e entortava o extrato do painel.
+const TETO_DESCRICAO = 200;
+const TETO_CATEGORIA = 60;
+
+function textoCurto(bruto, teto) {
+  return String(bruto ?? '').replace(INVISIVEIS, '').trim().slice(0, teto);
+}
+
 function sanitizarTexto(texto) {
   return String(texto ?? '').replace(INVISIVEIS, '').slice(0, LIMITE_TEXTO).trim();
 }
@@ -730,7 +764,10 @@ function sanitizarTexto(texto) {
 const TENTATIVAS = 3;
 const ESPERAS_MS = [700, 2000];
 
-const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+// As chaves nao sao enfeite: sem elas a arrow devolve o id do timer como
+// valor do executor, que o Promise ignora em silencio — e um retorno
+// ignorado e onde bug de async costuma se esconder.
+const esperar = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
 // ── DISJUNTOR ──────────────────────────────────────────────────────
 // A cota gratuita da Gemini é DIÁRIA. Quando ela acaba, insistir não traz
@@ -851,7 +888,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           return { kind: 'conversa' };
         }
         if (item.kind === 'mover_carteira') {
-          return { kind: 'mover_carteira', para: (item.para || '').trim() };
+          return { kind: 'mover_carteira', para: textoCurto(item.para, TETO_CATEGORIA) };
         }
         if (item.kind === 'carteira') {
           const ACOES = ['criar', 'trocar', 'listar', 'renomear', 'apagar'];
@@ -860,17 +897,17 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             // Ação desconhecida vira "listar": mostrar é a única que não muda
             // nada, e é a resposta certa pra quem só quer saber onde está.
             acao: ACOES.includes(item.acao) ? item.acao : 'listar',
-            nome: (item.nome || '').trim(),
-            novoNome: (item.novoNome || '').trim(),
+            nome: textoCurto(item.nome, TETO_CATEGORIA),
+            novoNome: textoCurto(item.novoNome, TETO_CATEGORIA),
           };
         }
         if (item.kind === 'editar_lancamento') {
           return {
             kind: 'editar_lancamento',
-            description: item.description || '',
+            description: textoCurto(item.description, TETO_DESCRICAO),
             amount: valorValido(item.amount),
-            category: item.category || '',
-            novaDescricao: item.novaDescricao || '',
+            category: textoCurto(item.category, TETO_CATEGORIA),
+            novaDescricao: textoCurto(item.novaDescricao, TETO_DESCRICAO),
           };
         }
         if (item.kind === 'apagar_item') {
@@ -880,27 +917,27 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             // Tipo desconhecido vira lançamento comum: é o caso mais provável,
             // e o backend ainda confere se achou algo antes de apagar.
             tipo: TIPOS.includes(item.tipo) ? item.tipo : 'lancamento',
-            description: item.description || '',
+            description: textoCurto(item.description, TETO_DESCRICAO),
           };
         }
         if (item.kind === 'quitar_divida') {
-          return { kind: 'quitar_divida', description: item.description || '' };
+          return { kind: 'quitar_divida', description: textoCurto(item.description, TETO_DESCRICAO) };
         }
         if (item.kind === 'desmarcar_parcela') {
-          return { kind: 'desmarcar_parcela', description: item.description || '' };
+          return { kind: 'desmarcar_parcela', description: textoCurto(item.description, TETO_DESCRICAO) };
         }
         if (item.kind === 'renomear_cofrinho') {
           return {
             kind: 'renomear_cofrinho',
             de: (item.de || '').trim(),
-            para: (item.para || '').trim(),
+            para: textoCurto(item.para, TETO_CATEGORIA),
           };
         }
         if (item.kind === 'categoria') {
           return {
             kind: 'categoria',
             acao: item.acao === 'apagar' ? 'apagar' : 'criar',
-            nome: (item.nome || '').trim(),
+            nome: textoCurto(item.nome, TETO_CATEGORIA),
           };
         }
         if (item.kind === 'planilha') {
@@ -910,7 +947,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           return { kind: 'resumo', period: item.period || 'mes' };
         }
         if (item.kind === 'mover_guardado') {
-          return { kind: 'mover_guardado', jar: (item.jar || '').trim() };
+          return { kind: 'mover_guardado', jar: textoCurto(item.jar, TETO_CATEGORIA) };
         }
         if (item.kind === 'converter_ultimo') {
           return {
@@ -927,29 +964,29 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           return { kind: 'apagar_dados', confirmado: false };
         }
         if (item.kind === 'parcela_paga') {
-          return { kind: 'parcela_paga', description: item.description || '' };
+          return { kind: 'parcela_paga', description: textoCurto(item.description, TETO_DESCRICAO) };
         }
         if (item.kind === 'recorrente') {
           return {
             kind: 'recorrente',
-            carteira: (item.carteira || '').trim(),
-            description: item.description || rawText.slice(0, 80),
+            carteira: textoCurto(item.carteira, TETO_CATEGORIA),
+            description: textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80),
             amount: valorValido(item.amount),
             type: item.type === 'receita' ? 'receita' : 'despesa',
-            category: item.category || 'Outros',
-            dayOfMonth: Number(item.dayOfMonth) || 1,
+            category: textoCurto(item.category, TETO_CATEGORIA) || 'Outros',
+            dayOfMonth: diaDoMesValido(item.dayOfMonth),
           };
         }
         if (item.kind === 'guardado') {
           return {
             kind: 'guardado',
-            carteira: (item.carteira || '').trim(),
+            carteira: textoCurto(item.carteira, TETO_CATEGORIA),
             diasAtras: diasValidos(item.diasAtras),
             amount: valorValido(item.amount),
             direction: item.direction === 'retirar' ? 'retirar' : 'guardar',
-            jar: (item.jar || '').trim(),
+            jar: textoCurto(item.jar, TETO_CATEGORIA),
             jarVago: item.jarVago === true,
-            description: item.description || rawText.slice(0, 80),
+            description: textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80),
           };
         }
         if (item.kind === 'editar_recorrente') {
@@ -957,7 +994,7 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           const escopo = ['um', 'lote', 'todos'].includes(item.escopo) ? item.escopo : 'um';
           return {
             kind: 'editar_recorrente',
-            description: (item.description || '').trim(),
+            description: textoCurto(item.description, TETO_DESCRICAO),
             dayOfMonth: Number(item.dayOfMonth) || 0,
             amount: valorValido(item.amount),
             escopo,
@@ -977,46 +1014,49 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
             kind: 'consulta',
             metric: item.metric || 'saldo',
             period: item.period || 'mes',
-            category: item.category || '',
+            category: textoCurto(item.category, TETO_CATEGORIA),
           };
         }
         if (item.kind === 'parcelamento') {
-          const installments = Math.round(Number(item.installments));
-          // A IA às vezes manda só um dos dois valores — o outro se deduz.
-          const installmentAmount = Number(item.installmentAmount) || Number(item.total) / installments;
-          const total = Number(item.total) || installmentAmount * installments;
+          const installments = parcelasValidas(item.installments);
+          // A IA às vezes manda só um dos dois valores — o outro se deduz. A
+          // divisão só acontece com parcelas válidas: dividir por 0 dava
+          // Infinity, e Infinity passava direto pro banco.
+          const bruto = Number(item.installmentAmount) || (installments ? Number(item.total) / installments : 0);
+          const installmentAmount = valorValido(bruto);
+          const total = valorValido(Number(item.total) || installmentAmount * installments);
           return {
             kind: 'parcelamento',
-            carteira: (item.carteira || '').trim(),
+            carteira: textoCurto(item.carteira, TETO_CATEGORIA),
             installments,
             installmentAmount,
             total,
-            category: item.category || 'Outros',
-            description: item.description || rawText.slice(0, 80),
+            category: textoCurto(item.category, TETO_CATEGORIA) || 'Outros',
+            description: textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80),
           };
         }
         if (item.kind === 'divida') {
           return {
             kind: 'divida',
-            carteira: (item.carteira || '').trim(),
+            carteira: textoCurto(item.carteira, TETO_CATEGORIA),
             diasAtras: diasValidos(item.diasAtras),
             amount: valorValido(item.amount),
             direction: item.direction,
-            person: item.person || '',
-            description: item.description || rawText.slice(0, 80),
+            person: textoCurto(item.person, TETO_CATEGORIA),
+            description: textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80),
           };
         }
         return {
           kind: 'transacao',
-          carteira: (item.carteira || '').trim(),
+          carteira: textoCurto(item.carteira, TETO_CATEGORIA),
           diasAtras: diasValidos(item.diasAtras),
           amount: valorValido(item.amount),
           type: item.type,
-          category: item.category,
+          category: textoCurto(item.category, TETO_CATEGORIA),
           // Serviço que costuma ser mensal. Só um palpite: quem decide é a
           // pessoa, e o backend usa isto apenas para perguntar.
           assinatura: item.assinatura === true,
-          description: item.description || rawText.slice(0, 80),
+          description: textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80),
         };
       });
     } catch (err) {

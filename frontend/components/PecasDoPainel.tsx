@@ -1,3 +1,4 @@
+import { memo } from 'react';
 // As peças do painel: recebem props, desenham, e não sabem de mais nada.
 //
 // São o oposto do resto do arquivo de onde saíram. Não tocam banco, não têm
@@ -42,7 +43,7 @@ export function renderDonutLabel({ cx = 0, cy = 0, midAngle = 0, innerRadius = 0
   );
 }
 
-export function Bloco({ rotulo, valor, cor, icone }: { rotulo: string; valor: string; cor: string; icone: React.ReactNode }) {
+function BlocoBase({ rotulo, valor, cor, icone }: { rotulo: string; valor: string; cor: string; icone: React.ReactNode }) {
   return (
     <div className="bloco px-6 py-6" style={{ backgroundColor: cor }}>
       <div className="absolute -right-5 -bottom-8 opacity-[0.15] pointer-events-none">{icone}</div>
@@ -52,7 +53,7 @@ export function Bloco({ rotulo, valor, cor, icone }: { rotulo: string; valor: st
   );
 }
 
-export function BarraProgresso({ pct }: { pct: number }) {
+function BarraProgressoBase({ pct }: { pct: number }) {
   return (
     <div
       className="h-4 rounded-full bg-[var(--areia)] border-2 border-[var(--borda)] overflow-hidden"
@@ -69,7 +70,7 @@ export function BarraProgresso({ pct }: { pct: number }) {
   );
 }
 
-export function EmptyChart({ text }: { text: string }) {
+function EmptyChartBase({ text }: { text: string }) {
   return (
     <div className="h-[280px] flex flex-col items-center justify-center gap-3 text-[var(--tinta-media)]">
       <Inbox size={34} className="text-[var(--ferrugem)]" />
@@ -96,7 +97,7 @@ export function BotaoAba({ ativo, onClick, icone, children }: { ativo: boolean; 
   );
 }
 
-export function Carregando() {
+function CarregandoBase() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-[var(--areia)]">
       <div className="h-10 w-10 rounded-full border-4 border-[var(--borda)] border-t-[var(--ferrugem)] animate-spin" />
@@ -119,7 +120,7 @@ export function PassoLista({ numero, children }: { numero: number; children: Rea
   );
 }
 
-export function GoogleIcon() {
+function GoogleIconBase() {
   return (
     <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
       <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z" />
@@ -155,7 +156,7 @@ export function CaixaModal({ titulo, onFechar, children }: { titulo: string; onF
   );
 }
 
-export function DebtRow({ debt, cor, onSettle, onDelete }: { debt: Debt; cor: string; onSettle: (id: string) => void; onDelete: (id: string) => void }) {
+function DebtRowBase({ debt, cor, onSettle, onDelete }: { debt: Debt; cor: string; onSettle: (id: string) => void; onDelete: (id: string) => void }) {
   const nome = debt.person ? ` — ${debt.person}` : '';
   return (
     <div
@@ -189,3 +190,17 @@ export function DebtRow({ debt, cor, onSettle, onDelete }: { debt: Debt; cor: st
     </div>
   );
 }
+
+// Folhas memoizadas.
+//
+// O painel guarda vinte e poucos estados; qualquer um deles mudando
+// redesenhava estas pecas de novo, mesmo com os mesmos dados. Sao as unicas
+// que recebem so props simples — as que recebem `children` ficam de fora de
+// proposito: children e objeto novo a cada render, entao o memo nunca
+// acertaria e so somaria o custo da comparacao.
+export const Bloco = memo(BlocoBase);
+export const BarraProgresso = memo(BarraProgressoBase);
+export const EmptyChart = memo(EmptyChartBase);
+export const Carregando = memo(CarregandoBase);
+export const GoogleIcon = memo(GoogleIconBase);
+export const DebtRow = memo(DebtRowBase);

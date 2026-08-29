@@ -53,3 +53,12 @@ jobs:
           # loop de restart com o site em 503. Isto carrega de verdade.
           npm ci --prefer-offline --no-audit --fund=false
           node verificar-modulos.js
+
+      - name: Lint do backend
+        working-directory: backend
+        run: |
+          # O backend nao tinha lint, so o frontend. Na primeira execucao ele
+          # achou tres ReferenceError em producao e um backspace invisivel
+          # dentro de uma regex, que matava a resolucao de "esse ai" em
+          # silencio. node --check e verificar-modulos.js nao pegam nada disso.
+          npx eslint .

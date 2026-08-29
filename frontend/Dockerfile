@@ -26,5 +26,14 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
+# Roda como o usuario `node` (uid 1000), que a imagem ja traz. Sem isto o
+# servidor do Next roda como root: qualquer falha que consiga executar codigo
+# aqui dentro o executa com privilegio total, e uma escapada do container vira
+# uma escapada como root.
+#
+# A porta 3000 esta acima de 1024, entao nao exige root pra escutar.
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 3000
 CMD ["node", "server.js"]

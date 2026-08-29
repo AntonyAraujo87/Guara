@@ -232,7 +232,13 @@ Privacidade: ${PAINEL_URL}/privacidade`;
 
 // Reação e evento de sistema não são a pessoa falando comigo — responder a um
 // "joinha" com "não entendi" seria mais irritante do que ficar quieto.
-const TIPOS_IGNORADOS = new Set(['reaction', 'system', 'order']);
+//
+// `request_welcome` chega quando alguém ABRE a conversa pela primeira vez, antes
+// de escrever qualquer coisa. Responder "só consigo entender mensagem escrita"
+// a isso era a primeira frase que a pessoa lia do Guará — uma reclamação sobre
+// uma mensagem que ela nem mandou. O "oi" dela vem logo depois, e a
+// apresentação de verdade sai daí.
+const TIPOS_IGNORADOS = new Set(['reaction', 'system', 'order', 'request_welcome']);
 
 function msgTipoNaoSuportado(tipo) {
   // audio e image não chegam aqui: são tratados em tratarMidia.
@@ -254,7 +260,36 @@ Me manda escrito, por áudio, ou uma foto do comprovante:
 Digite *ajuda* pra ver tudo que eu faço. 😉`;
 }
 
+// Como cada tipo de item se chama quando aparece numa frase.
+//
+// Fica aqui, e não no index.js, porque quem monta as frases é o respostas.js —
+// que não enxerga o index.js. O nome estava lá, e apagar um item pelo chat
+// ("apaga o mercado de ontem") estourava ReferenceError.
+const NOME_DO_TIPO = {
+  lancamento: 'lançamento',
+  divida: 'dívida',
+  recorrente: 'conta mensal',
+  parcelamento: 'parcelamento',
+  guardado: 'guardado',
+};
+
+// Vai pra quem já pegou o hábito no WhatsApp e ainda não abriu o painel.
+//
+// Um lembrete só, no quinto lançamento — quem chegou por "oi" já recebeu o
+// passo a passo completo na apresentação, e repetir vira insistência. A última
+// linha existe pra ninguém achar que precisa migrar pra algum lugar.
+const MSG_LEMBRETE_PAINEL = [
+  'Você já anotou 5 coisas por aqui. 👏',
+  '',
+  'Se quiser ver tudo em gráficos, com o mês inteiro na tela:',
+  PAINEL_URL,
+  '',
+  'Continua tudo funcionando pelo WhatsApp do mesmo jeito.',
+].join('\n');
+
 module.exports = {
+  NOME_DO_TIPO,
+  MSG_LEMBRETE_PAINEL,
   PAINEL_URL,
   EMAIL_CONTATO,
   MSG_APRESENTACAO,
