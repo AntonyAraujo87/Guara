@@ -1,0 +1,7 @@
+# Script com CRLF quebra no Linux: o shell le o  como parte do comando e
+# devolve "$'\r': command not found". Aconteceu ao copiar publicar.sh do
+# Windows pra VM, e o deploy falhou pela metade.
+*.sh text eol=lf
+*.yml text eol=lf
+*.py text eol=lf
+Dockerfile text eol=lf
