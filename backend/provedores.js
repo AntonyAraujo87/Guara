@@ -13,11 +13,19 @@
 // adaptador só atende Groq, Cerebras, GitHub Models, Cloudflare e OpenRouter.
 // A Gemini é a exceção, porque tem SDK próprio e é a única que lê áudio e foto.
 //
-// ⚠️ Endereços e nomes de modelo mudam. Todos são sobrescrevíveis por variável
-// de ambiente, e `node testes/provedores-vivos.js` confere quais realmente
-// respondem — não confie nesta lista, confie no teste.
+// ⚠️ Endereços e nomes de modelo mudam, e MUDARAM: em 29/08/2026 todos os
+// nomes que estavam aqui deram 404 ou 410. Os atuais foram descobertos
+// consultando o /models de cada provedor. Todos são sobrescrevíveis por
+// variável de ambiente, e `node testes/provedores-vivos.js` confere quais
+// realmente respondem — não confie nesta lista, confie no teste.
+//
+// O PROMPT DO GUARÁ TEM ~16.430 TOKENS. Esse é o gargalo real desta ideia:
+// derruba a maioria das camadas gratuitas por limite de tokens por minuto.
 
-const ORDEM_PADRAO = ['gemini', 'groq', 'cerebras', 'github', 'cloudflare', 'openrouter'];
+// Só entra aqui quem foi MEDIDO funcionando. Groq e Cerebras continuam no
+// catálogo, documentados, mas fora da fila — ligue com ORDEM_IA se um dia
+// mudarem de política.
+const ORDEM_PADRAO = ['gemini', 'cloudflare', 'openrouter'];
 
 // Cada provedor declara: como se chama, que protocolo fala, onde mora, qual
 // variável guarda a chave, e quais modelos usar (em ordem de preferência).
@@ -36,26 +44,40 @@ const CATALOGO = {
     ],
   },
 
+  // FORA DA FILA. O free tier do Groq limita 8.000 tokens por minuto na
+  // ORGANIZAÇÃO inteira, em qualquer modelo — e o prompt do Guará tem 16.430.
+  // Testado em gpt-oss-120b, gpt-oss-20b, qwen3.8-27b e compound-mini: todos
+  // devolvem 413. Não é escolha de modelo, é teto de conta.
+  //
+  // Volta a valer se o prompt encolher pela metade, ou se o plano mudar.
+  // Era o mais rápido de todos (859ms num teste pequeno), então vale voltar
+  // aqui se um dia o prompt for enxugado.
   groq: {
     tipo: 'openai',
     base: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
     chaveEnv: 'GROQ_API_KEY',
     modelos: [
-      { nome: process.env.GROQ_MODELO || 'llama-3.3-70b-versatile', tentativas: 2, timeout: 30_000 },
+      { nome: process.env.GROQ_MODELO || 'openai/gpt-oss-120b', tentativas: 2, timeout: 30_000 },
     ],
   },
 
+  // FORA DA FILA. Em 29/08/2026 a API responde "Payment required to access
+  // this resource" — a camada gratuita passou a exigir cartão.
   cerebras: {
     tipo: 'openai',
     base: process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1',
     chaveEnv: 'CEREBRAS_API_KEY',
     modelos: [
-      { nome: process.env.CEREBRAS_MODELO || 'llama-3.3-70b', tentativas: 2, timeout: 30_000 },
+      { nome: process.env.CEREBRAS_MODELO || 'gpt-oss-120b', tentativas: 2, timeout: 30_000 },
     ],
   },
 
-  // Não exige cadastro novo: usa a mesma conta do GitHub que já publica as
-  // imagens. A chave é um token com permissão de modelos.
+  // APOSENTADO pela GitHub em 2026: a API responde 410 com
+  // "github_models_retirement_brownout". Fica aqui documentado, fora da
+  // ORDEM_PADRAO — quem quiser tentar de novo usa ORDEM_IA=github,...
+  //
+  // Era o de menor atrito (usava a conta que já publica as imagens), e por isso
+  // vale registrar POR QUE saiu, em vez de sumir sem explicação.
   github: {
     tipo: 'openai',
     base: process.env.GITHUB_MODELS_BASE_URL || 'https://models.github.ai/inference',
@@ -74,7 +96,7 @@ const CATALOGO = {
       : null,
     chaveEnv: 'CLOUDFLARE_API_TOKEN',
     modelos: [
-      { nome: process.env.CLOUDFLARE_MODELO || '@cf/meta/llama-3.1-8b-instruct', tentativas: 2, timeout: 45_000 },
+      { nome: process.env.CLOUDFLARE_MODELO || '@cf/openai/gpt-oss-120b', tentativas: 2, timeout: 45_000 },
     ],
   },
 
@@ -86,7 +108,7 @@ const CATALOGO = {
     base: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
     chaveEnv: 'OPENROUTER_API_KEY',
     modelos: [
-      { nome: process.env.OPENROUTER_MODELO || 'meta-llama/llama-3.3-70b-instruct:free', tentativas: 1, timeout: 60_000 },
+      { nome: process.env.OPENROUTER_MODELO || 'z-ai/glm-5.2:free', tentativas: 1, timeout: 60_000 },
     ],
   },
 };

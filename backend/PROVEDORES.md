@@ -34,6 +34,34 @@ Sozinha, nada muda: não faz sentido poupar o único provedor que existe.
 
 Para forçar outra ordem, use `ORDEM_IA` — ela manda mais que o automático.
 
+
+---
+
+## O que foi MEDIDO em 29/08/2026
+
+Todos os nomes de modelo do catálogo original deram 404 ou 410. Os atuais foram
+descobertos consultando o `/models` de cada provedor. **Confie no teste, não na
+tabela** — rode `node testes/provedores-vivos.js`.
+
+| provedor | veredito |
+|---|---|
+| **Cloudflare** | ✅ funciona — `@cf/openai/gpt-oss-120b` |
+| **Gemini** | ✅ funciona — é a reserva, e a única multimodal |
+| OpenRouter | ⚠️ chave OK, modelos `:free` vivem sobrecarregados |
+| Groq | ❌ teto de **8.000 tokens/min na organização**, qualquer modelo |
+| Cerebras | ❌ `payment_required` — free tier agora exige cartão |
+| GitHub Models | ❌ aposentado pela GitHub (`410 retirement_brownout`) |
+
+### O prompt é o gargalo
+
+O SYSTEM_PROMPT do Guará tem **~16.430 tokens**. É isso que barra a maioria das
+camadas gratuitas — o Groq era o mais rápido de todos (859ms num teste pequeno) e
+foi excluído só por tamanho.
+
+Se um dia o prompt for enxugado pela metade, Groq volta a valer. O banco de ~130
+exemplos resolvidos é a maior parte dele — e é justamente o que faz a compreensão
+funcionar, então encolher tem custo real.
+
 ---
 
 ## Como conferir o que está valendo
