@@ -16,7 +16,7 @@ RUN npm ci --omit=dev
 # O preço é este: arquivo novo que não entrar aqui derruba o backend em loop de
 # restart, com "Cannot find module". Já aconteceu — ao criar um .js novo,
 # acrescente aqui na mesma mudança. O `verificar-modulos.js` confere isso no CI.
-COPY index.js formato.js mensagens.js respostas.js ai-service.js db-base.js db-service.js carteiras.js media-service.js leitura-simples.js run-recurring.js verificar-modulos.js ./
+COPY index.js formato.js mensagens.js respostas.js ai-service.js provedores.js db-base.js db-service.js carteiras.js media-service.js leitura-simples.js run-recurring.js verificar-modulos.js ./
 
 # Roda como gente, não como root.
 #

@@ -5,7 +5,7 @@ const axios = require('axios');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { extractItems, transcreverAudio, lerImagem } = require('./ai-service');
+const { extractItems, transcreverAudio, lerImagem, quemEstaNaFila } = require('./ai-service');
 const { baixarAudio, baixarImagem } = require('./media-service');
 const { lerSemIA } = require('./leitura-simples');
 const {
@@ -1072,4 +1072,16 @@ process.on('uncaughtException', (erro) => {
   process.exit(1);
 });
 
-app.listen(PORT || 3001, () => console.log(`Servidor rodando na porta ${PORT || 3001}`));
+app.listen(PORT || 3001, () => {
+  console.log(`Servidor rodando na porta ${PORT || 3001}`);
+
+  // Quem pode responder hoje. Aparece no boot porque "o Guara esta burro" quase
+  // sempre significa "a fila esta menor do que voce pensa" — e essa linha
+  // responde isso em um segundo, sem precisar de chamada nenhuma.
+  const fila = quemEstaNaFila();
+  if (fila.length === 0) {
+    console.error('ATENCAO: nenhum provedor de IA configurado. So a leitura simples vai funcionar.');
+  } else {
+    console.log('IA na fila: ' + fila.map((p) => p.provedor + ' (' + p.modelos.join(', ') + ')').join(' -> '));
+  }
+});
