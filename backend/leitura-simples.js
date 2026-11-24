@@ -69,7 +69,7 @@ function acharCategoria(texto) {
 }
 
 // ── DESCRIÇÃO ──────────────────────────────────────────────────────
-const RUIDO = /\b(paguei|gastei|comprei|recebi|caiu|entrou|ganhei|guardei|separei|torrei|saiu|custou|foi|deu|de|do|da|no|na|em|com|por|pra|para|um|uma|o|a|os|as|reais|real|pila|conto|contos|mango|mangos|hoje|agora|r\$)\b/gi;
+const RUIDO = /\b(paguei|gastei|comprei|recebi|caiu|entrou|ganhei|guardei|separei|torrei|saiu|custou|foi|deu|de|do|da|no|na|em|com|por|pra|para|um|uma|o|a|os|as|reais|real|pila|conto|contos|mango|mangos|hoje|agora|a\s+vista|cr[eé]dito|cart[ãa]o|d[eé]bito|1\s*x|r\$)\b|à\s*vista/gi;
 
 function acharDescricao(texto, valor) {
   const limpo = texto
@@ -88,12 +88,15 @@ function acharDescricao(texto, valor) {
 const NAO_E_PRA_MIM = [
   /\b(todo|toda)\s+(m[êe]s|dia|semana|ano)\b/i,                    // recorrente
   /\bmensal\w*|\bsemanal\w*|\bsempre\s+(no|na|dia)\b|\bpor m[êe]s\b/i,
-  /\b\d+\s*x\b|\bem\s+\d+\s+vezes\b|\bparcel\w+/i,                 // parcelamento
   /\bdevo\b|\bdeve\b|\bdevendo\b|\bemprest\w+|\bfiado\b/i,          // dívida
   /\bmeta\b|\bquero\s+(guardar|juntar)\b/i,                        // meta
   /\bapag\w+|\bdesfaz\w+|\bcancel\w+|\bmuda\b|\bmudar\b|\baltera\w*|\bcorrig\w+/i,
   /\bcarteira\b|\bconta da empresa\b|\bcria\w*\b/i,                 // carteira
 ];
+
+const MENCIONA_PARCELAMENTO = /\b\d+\s*x\b|\bem\s+\d+\s+vezes\b|\bparcel\w+/i;
+const PAGAMENTO_EM_UMA_VEZ = /\b(?:a\s+vista|1\s*x|uma\s+vez)\b|à\s*vista/i;
+const PARCELAS_MULTIPLAS = /\b(?:[2-9]|\d{2,})\s*x\b|\bem\s+(?:[2-9]|\d{2,})\s+vezes\b/i;
 
 // Frase longa ou com pontuação de lista quase sempre traz mais de uma coisa,
 // e aí só a IA dá conta. Aqui a régua é curta de propósito.
@@ -139,9 +142,16 @@ function lerSemIA(textoBruto, carteiras = []) {
   // Pergunta não é registro, e é fácil de reconhecer sem IA.
   if (/\?|^\s*(quanto|qual|quais|como|onde|quando|tenho|sobrou)\b/i.test(texto)) return null;
 
-  if (NAO_E_PRA_MIM.some((padrao) => padrao.test(texto))) return null;
+  const pagamentoUnico = PAGAMENTO_EM_UMA_VEZ.test(texto);
+  const temParcelas = MENCIONA_PARCELAMENTO.test(texto);
+  const temMultiplasParcelas = PARCELAS_MULTIPLAS.test(texto);
+  if (NAO_E_PRA_MIM.some((padrao) => padrao.test(texto))
+    || (temParcelas && (!pagamentoUnico || temMultiplasParcelas))) return null;
 
-  const valor = acharValor(texto);
+  // "1x" é condição de pagamento, não valor: retire o marcador antes de
+  // procurar o preço (ex.: "comprei em 1x de 200").
+  const textoSemMarcador1x = texto.replace(/\b1\s*x\b/gi, ' ');
+  const valor = acharValor(textoSemMarcador1x);
   if (valor === null) return null;
 
   const carteira = acharCarteiraCitada(texto, carteiras);
@@ -162,7 +172,7 @@ function lerSemIA(textoBruto, carteiras = []) {
 
   // Sem verbo e sem sinal, "30 mercado" ainda é claro: valor + lugar. Mas
   // "30" sozinho não é — pode ser resposta a uma pergunta minha.
-  const descricao = acharDescricao(texto, valor);
+  const descricao = acharDescricao(textoSemMarcador1x, valor);
   if (!temVerbo && !descricao) return null;
 
   return {

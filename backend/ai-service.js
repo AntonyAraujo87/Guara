@@ -105,6 +105,7 @@ Categorias válidas para despesa: "Alimentação", "Transporte", "Moradia", "Sa�
 Categorias válidas para receita: "Salário", "Freelance", "Investimentos", "Presente/Reembolso", "Outros".
 - QUANDO ACONTECEU: preencha "diasAtras" sempre que a frase disser o tempo. "ontem" = 1, "anteontem" = 2, "sexta passada" = conte os dias, "semana passada" = 7, "mês passado" = 30. Sem menção nenhuma, 0.
 - MÊS NOMEADO NUM REGISTRO: "gastei 1500 em junho", "paguei 300 em março", "recebi 2000 em janeiro" são TRANSAÇÕES com data, nunca consulta. Conte os dias de lá até hoje (use a data de hoje, que está no fim deste prompt). Se o mês nomeado ainda não chegou neste ano, é do ano passado. Passando de 365 dias, use 365.
+- COMPRA E MOMENTO DO GASTO: registre no mês em que a compra aconteceu. "à vista", "em 1x", "uma vez" e "no crédito" (sem dizer 2x ou mais) são transação normal, com diasAtras 0 se não houver data passada explícita. A data de vencimento da fatura não muda o mês da compra.
 - O teste que decide: quem tem o número? Se a pessoa DISSE o valor, é registro. Se ela quer receber o valor, é consulta.
 - SALDO QUE A PESSOA JÁ TEM: quando ela declara o dinheiro que possui hoje — "tenho 1500 de saldo no banco", "tenho 800 na conta", "meu saldo é 2000", "tenho 500 na carteira", "comecei com 1000" — isso é uma RECEITA (type "receita", category "Outros", description "Saldo inicial"). NÃO é consulta: ela está informando um valor, não perguntando.
 - A diferença entre informar e perguntar: "tenho 1500 no banco" INFORMA (é transacao). "quanto tenho no banco?" PERGUNTA (é consulta).
@@ -113,8 +114,9 @@ Categorias válidas para receita: "Salário", "Freelance", "Investimentos", "Pre
 {"kind": "divida", "amount": number, "direction": "a_receber" | "a_pagar", "person": string, "description": string, "diasAtras": number, "carteira": string}
 
 3. Parcelamento (compra dividida em parcelas — o dinheiro ainda vai sair aos poucos):
-{"kind": "parcelamento", "installments": number, "installmentAmount": number, "total": number, "category": string, "description": string}
+{"kind": "parcelamento", "installments": number, "installmentAmount": number, "total": number, "category": string, "description": string, "diasAtras": number}
 Gatilhos: "em 6x", "parcelei em 10 vezes", "dividi em 3x", "comprei em 12x de 80", "3 vezes de 50".
+- Só use parcelamento quando houver divisão explícita em 2 ou mais parcelas. "1x" é uma compra em uma vez e deve ser transacao no mês da compra. "No crédito" sozinho também é transacao; nunca invente parcelas nem empurre para o mês seguinte.
 - installments = quantidade de parcelas. installmentAmount = valor de CADA parcela. total = installments × installmentAmount.
 - Se a pessoa disser o TOTAL ("comprei uma TV de 1200 em 6x"), calcule installmentAmount = total ÷ installments.
 - Se disser o valor DA PARCELA ("6x de 200"), calcule total = installmentAmount × installments.
@@ -379,6 +381,13 @@ nenhum, use o mais parecido como guia.
 "TV de 1200 em 6x"                    -> parcelamento 6 × 200
 "6 vezes de 200 na TV"                -> parcelamento 6 × 200
 
+── COMPRA À VISTA, EM 1X OU NO CRÉDITO ──
+"comprei um tênis de 280 à vista"      -> transacao despesa 280, diasAtras 0
+"comprei um celular por 120 em 1x"     -> transacao despesa 120, diasAtras 0
+"paguei 90 no crédito"                 -> transacao despesa 90, diasAtras 0
+"passei 120 no cartão em 1x"           -> transacao despesa 120, diasAtras 0
+Só compras explicitamente divididas em 2x ou mais viram parcelamento.
+
 ── RECORRENTE (só quando ela DIZ que se repete) ──
 "todo mês pago 50 de netflix"         -> recorrente 50, dia 1
 "todo dia 10 pago 1200 de aluguel"    -> recorrente 1200, dia 10
@@ -579,9 +588,10 @@ Máximo 365 — acima disso a pessoa quase certamente quis dizer outra coisa.
 ── 12. FORMA DE PAGAMENTO É RUÍDO ──
 "no pix", "por pix", "no débito", "no crédito", "no cartão", "em dinheiro",
 "no dinheiro", "na mão", "no boleto", "por transferência", "no vale", "no VR",
-"no ticket", "parcelado no cartão sem juros" — nada disso muda o valor nem a
-categoria. Extraia o gasto normalmente e ignore o meio.
-Exceção: "parcelei em Nx" continua sendo parcelamento.
+"no ticket" — nada disso muda o valor, a categoria ou o mês da compra. Registre
+o gasto no mês em que aconteceu; não use o vencimento da fatura como data.
+"em 1x" também é transação no mês da compra. Só "parcelei em 2x ou mais" é
+parcelamento futuro.
 
 ── 13. LUGARES DO JEITO QUE A PESSOA CHAMA ──
 Muita gente não usa o nome oficial: "no Zé", "na dona Maria", "no seu João",
@@ -1057,14 +1067,31 @@ async function extractItems(rawText, categoriasExtras = [], carteiras = [], cart
           const bruto = Number(item.installmentAmount) || (installments ? Number(item.total) / installments : 0);
           const installmentAmount = valorValido(bruto);
           const total = valorValido(Number(item.total) || installmentAmount * installments);
+          const category = textoCurto(item.category, TETO_CATEGORIA) || 'Outros';
+          const description = textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80);
+          // Defesa adicional: o modelo pode classificar uma compra em 1x como
+          // parcelamento. Uma parcela é gasto do mês da compra, não fatura futura.
+          if (installments === 1) {
+            return {
+              kind: 'transacao',
+              carteira: textoCurto(item.carteira, TETO_CATEGORIA),
+              amount: total || installmentAmount,
+              type: 'despesa',
+              category,
+              description,
+              diasAtras: diasValidos(item.diasAtras),
+              assinatura: false,
+            };
+          }
           return {
             kind: 'parcelamento',
             carteira: textoCurto(item.carteira, TETO_CATEGORIA),
             installments,
             installmentAmount,
             total,
-            category: textoCurto(item.category, TETO_CATEGORIA) || 'Outros',
-            description: textoCurto(item.description, TETO_DESCRICAO) || rawText.slice(0, 80),
+            category,
+            description,
+            diasAtras: diasValidos(item.diasAtras),
           };
         }
         if (item.kind === 'divida') {
